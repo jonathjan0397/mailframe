@@ -1,3 +1,4 @@
+import DOMPurify from "dompurify";
 import { useEffect, useRef, useState } from "react";
 import type { AttachmentPayload, SendPayload } from "../features/mail/provider";
 
@@ -14,7 +15,11 @@ const DRAFT_KEY = "mailframe-draft";
 const SIGNATURE_KEY = "mailframe-signature";
 const CONTACTS_KEY = "mailframe-contacts";
 
-type DraftData = { to: string; cc: string; bcc: string; subject: string; body: string };
+type DraftData = {
+  to: string; cc: string; bcc: string; subject: string;
+  body: string;       // plain-text (for draft restore fallback)
+  bodyHtml?: string;  // rich HTML content
+};
 
 function getSignature(): string {
   try { return localStorage.getItem(SIGNATURE_KEY) ?? ""; }
@@ -28,17 +33,38 @@ function getContacts(): string[] {
   } catch { return []; }
 }
 
+function buildInitialHtml(body: string, isNew: boolean): string {
+  const sig = isNew ? getSignature() : "";
+  let html = "";
+  if (body) {
+    // Convert plain text to basic HTML
+    html = body
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/\n/g, "<br>");
+  }
+  if (sig) {
+    const sigHtml = sig
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/\n/g, "<br>");
+    html = `<p><br></p>${html}<p>-- <br>${sigHtml}</p>`;
+  }
+  return html || "<p><br></p>";
+}
+
 function loadDraft(
   initialTo: string,
   initialCc: string,
   initialSubject: string,
   initialBody: string,
-): DraftData {
-  // Reply/forward: use pre-filled values directly — no draft restore
-  if (initialTo || initialSubject || initialBody || initialCc) {
-    return { to: initialTo, cc: initialCc, bcc: "", subject: initialSubject, body: initialBody };
+): DraftData & { isNew: boolean } {
+  const isNew = !initialTo && !initialSubject && !initialBody && !initialCc;
+  if (!isNew) {
+    return { to: initialTo, cc: initialCc, bcc: "", subject: initialSubject, body: initialBody, isNew };
   }
-  // New composition: try to restore saved draft
   try {
     const raw = localStorage.getItem(DRAFT_KEY);
     if (raw) {
@@ -49,12 +75,12 @@ function loadDraft(
         bcc: saved.bcc ?? "",
         subject: saved.subject ?? "",
         body: saved.body ?? "",
+        bodyHtml: saved.bodyHtml,
+        isNew,
       };
     }
   } catch { /* ignore */ }
-  // Fresh composition — insert signature
-  const sig = getSignature();
-  return { to: "", cc: "", bcc: "", subject: "", body: sig ? `\n\n-- \n${sig}` : "" };
+  return { to: "", cc: "", bcc: "", subject: "", body: "", isNew };
 }
 
 async function filesToPayload(files: File[]): Promise<AttachmentPayload[]> {
@@ -85,37 +111,99 @@ export function ComposeModal({
   onSend,
   onClose,
 }: Props) {
-  const [draft] = useState<DraftData>(() =>
-    loadDraft(initialTo, initialCc, initialSubject, initialBody),
-  );
+  const draftRef = useRef(loadDraft(initialTo, initialCc, initialSubject, initialBody));
+  const draft = draftRef.current;
+
   const [to, setTo] = useState(draft.to);
   const [cc, setCc] = useState(draft.cc);
   const [bcc, setBcc] = useState(draft.bcc);
   const [subject, setSubject] = useState(draft.subject);
-  const [body, setBody] = useState(draft.body);
   const [showCcBcc, setShowCcBcc] = useState(!!(draft.cc || draft.bcc));
   const [attachments, setAttachments] = useState<File[]>([]);
+  const [draftSaved, setDraftSaved] = useState(false);
+
+  const editorRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const draftTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Only auto-save for new compositions (no pre-filled fields)
-  const isDraftTarget = !initialTo && !initialSubject && !initialBody && !initialCc;
+  const isDraftTarget = draft.isNew;
 
-  // Auto-save with 500ms debounce
+  // Set initial editor content on mount
   useEffect(() => {
+    if (!editorRef.current) return;
+    const html = draft.bodyHtml ?? buildInitialHtml(draft.body, isDraftTarget);
+    editorRef.current.innerHTML = DOMPurify.sanitize(html);
+    // Place cursor at the very start
+    const range = document.createRange();
+    const sel = window.getSelection();
+    range.setStart(editorRef.current, 0);
+    range.collapse(true);
+    sel?.removeAllRanges();
+    sel?.addRange(range);
+    editorRef.current.focus();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  function saveDraft() {
     if (!isDraftTarget) return;
-    const timer = setTimeout(() => {
-      if (to || cc || bcc || subject || body) {
-        localStorage.setItem(DRAFT_KEY, JSON.stringify({ to, cc, bcc, subject, body }));
+    if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
+    draftTimerRef.current = setTimeout(() => {
+      const bodyHtml = editorRef.current?.innerHTML ?? "";
+      const body = editorRef.current?.innerText ?? "";
+      if (to || subject || bodyHtml) {
+        localStorage.setItem(
+          DRAFT_KEY,
+          JSON.stringify({ to, cc, bcc, subject, body, bodyHtml }),
+        );
+        setDraftSaved(true);
       } else {
         localStorage.removeItem(DRAFT_KEY);
+        setDraftSaved(false);
       }
     }, 500);
-    return () => clearTimeout(timer);
-  }, [to, cc, bcc, subject, body, isDraftTarget]);
+  }
+
+  function handleEditorInput() { saveDraft(); }
+
+  function handleEditorKeyDown(e: React.KeyboardEvent<HTMLDivElement>) {
+    if (e.ctrlKey || e.metaKey) {
+      switch (e.key) {
+        case "b": e.preventDefault(); document.execCommand("bold"); break;
+        case "i": e.preventDefault(); document.execCommand("italic"); break;
+        case "u": e.preventDefault(); document.execCommand("underline"); break;
+      }
+    }
+  }
+
+  function handleEditorPaste(e: React.ClipboardEvent<HTMLDivElement>) {
+    e.preventDefault();
+    const html = e.clipboardData.getData("text/html");
+    const text = e.clipboardData.getData("text/plain");
+    if (html) {
+      const clean = DOMPurify.sanitize(html, {
+        ALLOWED_TAGS: ["b", "i", "u", "strong", "em", "br", "p", "ul", "ol", "li", "a", "span", "div"],
+        ALLOWED_ATTR: ["href"],
+      });
+      document.execCommand("insertHTML", false, clean);
+    } else {
+      document.execCommand("insertText", false, text);
+    }
+  }
+
+  function execFormat(command: string, value?: string) {
+    document.execCommand(command, false, value ?? undefined);
+    editorRef.current?.focus();
+  }
+
+  function handleCreateLink() {
+    const url = window.prompt("Enter URL:");
+    if (url?.trim()) execFormat("createLink", url.trim());
+  }
 
   async function handleSend() {
     if (!to.trim()) return;
     localStorage.removeItem(DRAFT_KEY);
+    const bodyHtml = editorRef.current?.innerHTML ?? "";
+    const body = editorRef.current?.innerText ?? "";
     const attachmentPayloads =
       attachments.length > 0 ? await filesToPayload(attachments) : undefined;
     onSend({
@@ -124,6 +212,7 @@ export function ComposeModal({
       bcc: bcc.trim() || undefined,
       subject: subject.trim(),
       body: body.trim(),
+      bodyHtml: bodyHtml || undefined,
       attachments: attachmentPayloads,
     });
   }
@@ -131,6 +220,13 @@ export function ComposeModal({
   function handleDiscard() {
     if (isDraftTarget) localStorage.removeItem(DRAFT_KEY);
     onClose();
+  }
+
+  function handleFieldChange(setter: (v: string) => void) {
+    return (e: React.ChangeEvent<HTMLInputElement>) => {
+      setter(e.target.value);
+      saveDraft();
+    };
   }
 
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -171,7 +267,7 @@ export function ComposeModal({
               id="mf-compose-to"
               type="text"
               value={to}
-              onChange={(e) => setTo(e.target.value)}
+              onChange={handleFieldChange(setTo)}
               placeholder="recipient@example.com"
               list="mf-compose-contacts"
               autoFocus
@@ -195,7 +291,7 @@ export function ComposeModal({
                   id="mf-compose-cc"
                   type="text"
                   value={cc}
-                  onChange={(e) => setCc(e.target.value)}
+                  onChange={handleFieldChange(setCc)}
                   placeholder="cc@example.com"
                   list="mf-compose-contacts"
                 />
@@ -206,7 +302,7 @@ export function ComposeModal({
                   id="mf-compose-bcc"
                   type="text"
                   value={bcc}
-                  onChange={(e) => setBcc(e.target.value)}
+                  onChange={handleFieldChange(setBcc)}
                   placeholder="bcc@example.com"
                   list="mf-compose-contacts"
                 />
@@ -220,19 +316,114 @@ export function ComposeModal({
               id="mf-compose-subject"
               type="text"
               value={subject}
-              onChange={(e) => setSubject(e.target.value)}
+              onChange={handleFieldChange(setSubject)}
               placeholder="Subject"
             />
           </div>
         </div>
 
-        <textarea
-          id="mf-compose-body"
-          className="mf-compose-body"
-          value={body}
-          onChange={(e) => setBody(e.target.value)}
-          placeholder="Write your message…"
+        {/* Rich-text toolbar */}
+        <div className="mf-compose-toolbar" role="toolbar" aria-label="Text formatting">
+          <button
+            type="button"
+            className="mf-toolbar-btn"
+            onMouseDown={(e) => { e.preventDefault(); execFormat("bold"); }}
+            title="Bold (Ctrl+B)"
+            aria-label="Bold"
+          >
+            <strong>B</strong>
+          </button>
+          <button
+            type="button"
+            className="mf-toolbar-btn"
+            onMouseDown={(e) => { e.preventDefault(); execFormat("italic"); }}
+            title="Italic (Ctrl+I)"
+            aria-label="Italic"
+          >
+            <em>I</em>
+          </button>
+          <button
+            type="button"
+            className="mf-toolbar-btn"
+            onMouseDown={(e) => { e.preventDefault(); execFormat("underline"); }}
+            title="Underline (Ctrl+U)"
+            aria-label="Underline"
+          >
+            <u>U</u>
+          </button>
+          <button
+            type="button"
+            className="mf-toolbar-btn"
+            onMouseDown={(e) => { e.preventDefault(); execFormat("strikeThrough"); }}
+            title="Strikethrough"
+            aria-label="Strikethrough"
+          >
+            <s>S</s>
+          </button>
+          <span className="mf-toolbar-sep" aria-hidden="true" />
+          <button
+            type="button"
+            className="mf-toolbar-btn"
+            onMouseDown={(e) => { e.preventDefault(); execFormat("insertUnorderedList"); }}
+            title="Bullet list"
+            aria-label="Bullet list"
+          >
+            •≡
+          </button>
+          <button
+            type="button"
+            className="mf-toolbar-btn"
+            onMouseDown={(e) => { e.preventDefault(); execFormat("insertOrderedList"); }}
+            title="Numbered list"
+            aria-label="Numbered list"
+          >
+            1≡
+          </button>
+          <span className="mf-toolbar-sep" aria-hidden="true" />
+          <button
+            type="button"
+            className="mf-toolbar-btn"
+            onMouseDown={(e) => { e.preventDefault(); handleCreateLink(); }}
+            title="Insert link"
+            aria-label="Insert link"
+          >
+            🔗
+          </button>
+          <button
+            type="button"
+            className="mf-toolbar-btn"
+            onMouseDown={(e) => { e.preventDefault(); execFormat("unlink"); }}
+            title="Remove link"
+            aria-label="Remove link"
+          >
+            ⛓‍💥
+          </button>
+          <span className="mf-toolbar-sep" aria-hidden="true" />
+          <button
+            type="button"
+            className="mf-toolbar-btn"
+            onMouseDown={(e) => { e.preventDefault(); execFormat("removeFormat"); }}
+            title="Clear formatting"
+            aria-label="Clear formatting"
+          >
+            Tx
+          </button>
+        </div>
+
+        {/* Contenteditable rich-text editor */}
+        <div
+          ref={editorRef}
+          className="mf-compose-editor"
+          // eslint-disable-next-line react/no-danger -- content set via ref on mount, not dangerouslySetInnerHTML
+          contentEditable
+          suppressContentEditableWarning
+          role="textbox"
+          aria-multiline="true"
           aria-label="Message body"
+          data-placeholder="Write your message…"
+          onInput={handleEditorInput}
+          onKeyDown={handleEditorKeyDown}
+          onPaste={handleEditorPaste}
         />
 
         {attachments.length > 0 && (
@@ -287,7 +478,7 @@ export function ComposeModal({
             onChange={handleFileChange}
             aria-hidden="true"
           />
-          {isDraftTarget && (to || subject || body) && (
+          {isDraftTarget && draftSaved && (
             <span className="mf-draft-indicator" aria-live="polite">
               Draft saved
             </span>

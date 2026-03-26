@@ -17,6 +17,36 @@ type ComposeMode =
   | { type: "replyAll"; to: string; cc: string; subject: string }
   | { type: "forward"; subject: string; body: string[] };
 
+type ThreadGroup = {
+  key: string;
+  latestMsg: MailItem;
+  count: number;
+  unreadCount: number;
+  senders: string[];
+};
+
+function normalizeSubject(subject: string): string {
+  return subject.replace(/^(re|fwd?|fw):\s*/gi, "").trim().toLowerCase();
+}
+
+function buildThreadGroups(msgs: MailItem[]): ThreadGroup[] {
+  const map = new Map<string, MailItem[]>();
+  for (const msg of msgs) {
+    const key = normalizeSubject(msg.subject) || msg.subject.toLowerCase();
+    const group = map.get(key) ?? [];
+    group.push(msg);
+    map.set(key, group);
+  }
+  const groups: ThreadGroup[] = [];
+  for (const [key, items] of map) {
+    const latestMsg = items[0];
+    const unreadCount = items.filter((m) => m.unread).length;
+    const uniqueSenders = [...new Set(items.map((m) => m.sender))];
+    groups.push({ key, latestMsg, count: items.length, unreadCount, senders: uniqueSenders });
+  }
+  return groups;
+}
+
 const CONTACTS_KEY = "mailframe-contacts";
 
 const SYSTEM_FOLDER_IDS = new Set([
@@ -65,6 +95,8 @@ export function App() {
   const [newMessageCount, setNewMessageCount] = useState(0);
   const [refreshToken, setRefreshToken] = useState(0);
   const [showKeyboardHelp, setShowKeyboardHelp] = useState(false);
+  const [threadView, setThreadView] = useState(false);
+  const [expandedThreadKey, setExpandedThreadKey] = useState<string | null>(null);
   // Folder management
   const [creatingFolder, setCreatingFolder] = useState(false);
   const [newFolderName, setNewFolderName] = useState("");
@@ -86,6 +118,11 @@ export function App() {
   const totalUnread = useMemo(
     () => folders.reduce((sum, f) => sum + (f.unreadCount ?? 0), 0),
     [folders],
+  );
+
+  const threadGroups = useMemo(
+    () => (threadView ? buildThreadGroups(messages) : []),
+    [messages, threadView],
   );
 
   // Apply theme
@@ -114,6 +151,7 @@ export function App() {
     setSelectedIds(new Set());
     setDetail(null);
     setDetailLoading(false);
+    setExpandedThreadKey(null);
   }, [provider, activeFolderId]);
 
   // Keep message-id ref in sync for polling
@@ -444,7 +482,7 @@ export function App() {
   };
 
   const rowVirtualizer = useVirtualizer({
-    count: messages.length,
+    count: threadView ? threadGroups.length : messages.length,
     getScrollElement: () => messagesListRef.current,
     estimateSize: () => 73,
     overscan: 8,
@@ -677,6 +715,15 @@ export function App() {
             aria-label="Select all messages"
           />
           <span className="mf-list-title">{activeFolder?.label ?? "Inbox"}</span>
+          <button
+            className={`mf-thread-toggle${threadView ? " active" : ""}`}
+            onClick={() => { setThreadView((v) => !v); setExpandedThreadKey(null); }}
+            title={threadView ? "Flat view" : "Thread view"}
+            aria-label={threadView ? "Switch to flat view" : "Switch to thread view"}
+            aria-pressed={threadView}
+          >
+            ⋮≡
+          </button>
           {newMessageCount > 0 && (
             <button
               className="mf-new-badge"
@@ -738,6 +785,73 @@ export function App() {
           >
             <div style={{ height: `${rowVirtualizer.getTotalSize()}px`, position: "relative" }}>
               {rowVirtualizer.getVirtualItems().map((virtualItem) => {
+                const rowStyle: React.CSSProperties = {
+                  position: "absolute",
+                  top: 0,
+                  left: 0,
+                  width: "100%",
+                  transform: `translateY(${virtualItem.start}px)`,
+                };
+
+                if (threadView) {
+                  const group = threadGroups[virtualItem.index];
+                  const isSelected = expandedThreadKey === group.key;
+                  const senderDisplay =
+                    group.senders.length > 2
+                      ? `${group.senders.slice(0, 2).join(", ")} & ${group.senders.length - 2} more`
+                      : group.senders.join(", ");
+                  return (
+                    <li
+                      key={group.key}
+                      role="button"
+                      tabIndex={0}
+                      aria-label={`Thread: ${group.latestMsg.subject}, ${group.count} messages`}
+                      aria-selected={isSelected}
+                      className={[
+                        "mf-message-row",
+                        group.unreadCount > 0 ? "unread" : "",
+                        isSelected ? "selected" : "",
+                      ].filter(Boolean).join(" ")}
+                      style={rowStyle}
+                      onClick={() => {
+                        setExpandedThreadKey(group.key);
+                        setSelectedId(group.latestMsg.id);
+                        setSelectedIds(new Set());
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          setExpandedThreadKey(group.key);
+                          setSelectedId(group.latestMsg.id);
+                          setSelectedIds(new Set());
+                        }
+                      }}
+                    >
+                      <div className="mf-message-content">
+                        <div className="mf-message-top">
+                          <span className="mf-message-sender">{senderDisplay}</span>
+                          <span className="mf-message-timestamp">{group.latestMsg.timestamp}</span>
+                        </div>
+                        <div className="mf-message-subject">
+                          {group.latestMsg.subject}
+                          {group.count > 1 && (
+                            <span className="mf-thread-count">{group.count}</span>
+                          )}
+                        </div>
+                        <div className="mf-message-preview">{group.latestMsg.preview}</div>
+                      </div>
+                      <button
+                        className={`mf-star-btn${group.latestMsg.starred ? " starred" : ""}`}
+                        onClick={(e) => handleStar(group.latestMsg.id, e)}
+                        aria-label={group.latestMsg.starred ? "Unstar" : "Star"}
+                        aria-pressed={group.latestMsg.starred}
+                      >
+                        {group.latestMsg.starred ? "★" : "☆"}
+                      </button>
+                    </li>
+                  );
+                }
+
                 const msg = messages[virtualItem.index];
                 return (
                   <li
@@ -752,13 +866,7 @@ export function App() {
                       selectedId === msg.id ? "selected" : "",
                       selectedIds.has(msg.id) ? "checked" : "",
                     ].filter(Boolean).join(" ")}
-                    style={{
-                      position: "absolute",
-                      top: 0,
-                      left: 0,
-                      width: "100%",
-                      transform: `translateY(${virtualItem.start}px)`,
-                    }}
+                    style={rowStyle}
                     onClick={() => { setSelectedId(msg.id); setSelectedIds(new Set()); }}
                     onKeyDown={(e) => {
                       if (e.key === "Enter" || e.key === " ") {
@@ -888,6 +996,41 @@ export function App() {
                 Delete
               </button>
             </div>
+
+            {threadView && expandedThreadKey && (() => {
+              const threadMsgs = messages.filter(
+                (m) => (normalizeSubject(m.subject) || m.subject.toLowerCase()) === expandedThreadKey,
+              );
+              if (threadMsgs.length <= 1) return null;
+              return (
+                <div className="mf-thread-panel" aria-label="Thread messages">
+                  <div className="mf-thread-panel-label">{threadMsgs.length} messages in thread</div>
+                  <ul className="mf-thread-list" role="list">
+                    {threadMsgs.map((m) => (
+                      <li
+                        key={m.id}
+                        role="button"
+                        tabIndex={0}
+                        className={`mf-thread-item${selectedId === m.id ? " selected" : ""}${m.unread ? " unread" : ""}`}
+                        aria-selected={selectedId === m.id}
+                        onClick={() => { setSelectedId(m.id); setSelectedIds(new Set()); }}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            setSelectedId(m.id);
+                            setSelectedIds(new Set());
+                          }
+                        }}
+                      >
+                        <span className="mf-thread-item-sender">{m.sender}</span>
+                        <span className="mf-thread-item-subject">{m.subject}</span>
+                        <span className="mf-thread-item-ts">{m.timestamp}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              );
+            })()}
 
             {detail.bodyHtml ? (
               <div

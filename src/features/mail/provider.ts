@@ -19,7 +19,10 @@ export type SendPayload = {
   cc?: string;
   bcc?: string;
   subject: string;
+  /** Plain-text body (always present as fallback). */
   body: string;
+  /** HTML body; when present the server sends multipart/alternative. */
+  bodyHtml?: string;
   replyToId?: string;
   forwardOfId?: string;
   attachments?: AttachmentPayload[];
