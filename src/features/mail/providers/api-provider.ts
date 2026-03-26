@@ -11,7 +11,7 @@ import type { MailProvider, MailboxQuery, SendPayload } from "../provider";
 
 const BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? "http://localhost:4010";
 
-async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
+async function apiFetch<T>(path: string, init?: RequestInit & { signal?: AbortSignal }): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
     ...init,
     headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
@@ -23,6 +23,7 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   }
   return res.json() as Promise<T>;
 }
+// Note: AbortError from fetch propagates naturally — callers check e.name === "AbortError".
 
 export const apiProvider: MailProvider = {
   async getMailboxSnapshot(query?: MailboxQuery) {
@@ -31,11 +32,11 @@ export const apiProvider: MailProvider = {
     if (query?.page) params.set("page", String(query.page));
     if (query?.query) params.set("q", query.query);
     const qs = params.toString() ? `?${params}` : "";
-    return apiFetch(`/mailbox${qs}`);
+    return apiFetch(`/mailbox${qs}`, { signal: query?.signal });
   },
 
-  async getMessageDetail(messageId: string) {
-    return apiFetch(`/messages/${encodeURIComponent(messageId)}`);
+  async getMessageDetail(messageId: string, signal?: AbortSignal) {
+    return apiFetch(`/messages/${encodeURIComponent(messageId)}`, { signal });
   },
 
   async moveMessages(messageIds: string[], targetFolderId: string) {

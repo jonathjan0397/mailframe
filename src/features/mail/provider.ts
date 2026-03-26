@@ -5,6 +5,7 @@ export type MailboxQuery = {
   page?: number;
   query?: string;
   refreshToken?: number;
+  signal?: AbortSignal;
 };
 
 export type AttachmentPayload = {
@@ -36,7 +37,7 @@ export type SendPayload = {
 export type MailProvider = {
   // Read
   getMailboxSnapshot: (query?: MailboxQuery) => Promise<MailboxSnapshot>;
-  getMessageDetail: (messageId: string) => Promise<MailMessageDetail>;
+  getMessageDetail: (messageId: string, signal?: AbortSignal) => Promise<MailMessageDetail>;
 
   // Write (optional)
   moveMessages?: (messageIds: string[], targetFolderId: string) => Promise<void>;

@@ -457,26 +457,25 @@ export function App() {
   useEffect(() => {
     // Don't fetch until the user is authenticated (api provider) or on demo
     if (providerId === "api" && typeof authState !== "string") return;
-    let cancelled = false;
+    const ac = new AbortController();
     setMailboxLoading(true);
     setMailboxError(null);
     setHasNextPage(false);
     setPage(1);
     setNewMessageCount(0);
-    provider.getMailboxSnapshot({ folderId: activeFolderId, query: search, page: 1 })
+    provider.getMailboxSnapshot({ folderId: activeFolderId, query: search, page: 1, signal: ac.signal })
       .then((snapshot) => {
-        if (cancelled) return;
         setFolders(snapshot.folders);
         setMessages(snapshot.messages);
         setHasNextPage(snapshot.meta?.hasNextPage ?? false);
         setMailboxLoading(false);
       })
       .catch((e: unknown) => {
-        if (cancelled) return;
+        if ((e as { name?: string }).name === "AbortError") return;
         setMailboxError(e instanceof Error ? e.message : "Failed to load mailbox.");
         setMailboxLoading(false);
       });
-    return () => { cancelled = true; };
+    return () => ac.abort();
   }, [activeFolderId, search, provider, refreshToken, authState]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Poll for new messages every 60s (bridge mode only)
@@ -542,18 +541,19 @@ export function App() {
   // Load detail
   useEffect(() => {
     if (!selectedId) { setDetail(null); return; }
-    let cancelled = false;
+    const ac = new AbortController();
     setDetailLoading(true);
     setMessages((prev) => prev.map((m) => m.id === selectedId ? { ...m, unread: false } : m));
     provider.markRead?.([selectedId], true);
-    provider.getMessageDetail(selectedId).then((d) => {
-      if (!cancelled) {
-        setDetail(d);
-        setDetailLoading(false);
-        saveContact(d.sender);
-      }
+    provider.getMessageDetail(selectedId, ac.signal).then((d) => {
+      setDetail(d);
+      setDetailLoading(false);
+      saveContact(d.sender);
+    }).catch((e: unknown) => {
+      if ((e as { name?: string }).name === "AbortError") return;
+      setDetailLoading(false);
     });
-    return () => { cancelled = true; };
+    return () => ac.abort();
   }, [selectedId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Auto-load image thumbnails when detail changes
