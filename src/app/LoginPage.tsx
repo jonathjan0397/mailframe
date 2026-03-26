@@ -7,7 +7,7 @@ const EMAIL_KEY = "mailframe-last-email";
 
 type Props = {
   apiBase: string;
-  onLogin: (email: string) => void;
+  onLogin: (email: string, accounts: string[]) => void;
 };
 
 export function LoginPage({ apiBase, onLogin }: Props) {
@@ -53,10 +53,10 @@ export function LoginPage({ apiBase, onLogin }: Props) {
         credentials: "include",
         body: JSON.stringify({ email: email.trim(), password }),
       });
-      const data = await res.json() as { error?: string };
+      const data = await res.json() as { error?: string; accounts?: string[] };
       if (!res.ok) throw new Error(data.error ?? "Login failed");
       localStorage.setItem(EMAIL_KEY, email.trim());
-      onLogin(email.trim());
+      onLogin(email.trim(), data.accounts ?? [email.trim()]);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Login failed");
     } finally {

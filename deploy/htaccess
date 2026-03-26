@@ -1,0 +1,13 @@
+# MailFrame — root .htaccess
+# Routes /api/* requests to the PHP bridge.
+
+RewriteEngine On
+
+# Block direct access to the bridge config
+RewriteRule ^mailframe-api/mailframe\.config\.json$ - [F,L]
+RewriteRule ^mailframe-api/setup\.lock$ - [F,L]
+
+# Route /api/* to the PHP bridge
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^api/(.*)$ /mailframe-api/index.php?_route=$1 [QSA,L]

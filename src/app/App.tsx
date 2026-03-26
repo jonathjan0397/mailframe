@@ -100,6 +100,21 @@ function formatFileSize(bytes: number): string {
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
 
+function resolveInlineImages(
+  html: string,
+  messageId: string,
+  inlineParts: Array<{ cid: string; partId: string }>,
+  apiBase: string,
+): string {
+  let out = html;
+  for (const p of inlineParts) {
+    const url = `${apiBase}/messages/${encodeURIComponent(messageId)}/attachments/${encodeURIComponent(p.partId)}`;
+    // Replace both bare cid: and quoted cid: variants
+    out = out.split(`cid:${p.cid}`).join(url);
+  }
+  return out;
+}
+
 export function App() {
   const [activeThemeId, setActiveThemeId] = useState(
     () => localStorage.getItem("mailframe-theme") ?? themeRegistry[0].id,
@@ -162,6 +177,13 @@ export function App() {
   const scheduledSendsRef = useRef(scheduledSends);
   scheduledSendsRef.current = scheduledSends;
 
+  // Multiple accounts
+  const [accounts, setAccounts] = useState<string[]>([]);
+  const [addingAccount, setAddingAccount] = useState(false);
+  const [addAccountEmail, setAddAccountEmail] = useState("");
+  const [addAccountPass, setAddAccountPass] = useState("");
+  const [addAccountError, setAddAccountError] = useState("");
+
   // Quick reply
   const [quickReply, setQuickReply] = useState("");
 
@@ -209,14 +231,15 @@ export function App() {
 
   // Check auth when switching to bridge provider
   useEffect(() => {
-    if (providerId !== "api") { setAuthState(null); return; }
+    if (providerId !== "api") { setAuthState(null); setAccounts([]); return; }
     const apiBase = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? "http://localhost:4010";
     fetch(`${apiBase}/auth/me`, { credentials: "include" })
       .then((r) => r.json())
-      .then((d: { ok: boolean; email?: string }) => {
+      .then((d: { ok: boolean; email?: string; accounts?: string[] }) => {
         setAuthState(d.ok && d.email ? d.email : false);
+        setAccounts(d.ok && d.accounts ? d.accounts : []);
       })
-      .catch(() => setAuthState(false));
+      .catch(() => { setAuthState(false); setAccounts([]); });
   }, [providerId]);
 
   // Load settings from server after login
@@ -260,9 +283,75 @@ export function App() {
     const apiBase = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? "http://localhost:4010";
     await fetch(`${apiBase}/auth/logout`, { method: "POST", credentials: "include" }).catch(() => {});
     setAuthState(false);
+    setAccounts([]);
     setSelectedId(null);
     setDetail(null);
     setMessages([]);
+  }
+
+  async function handleSwitchAccount(email: string) {
+    if (!provider.switchAccount) return;
+    try {
+      const res = await provider.switchAccount(email);
+      setAuthState(res.email);
+      setAccounts(res.accounts);
+      setSelectedId(null);
+      setDetail(null);
+      setMessages([]);
+      setRefreshToken((n) => n + 1);
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : "Switch failed");
+    }
+  }
+
+  async function handleLogoutAccount(email: string) {
+    if (!provider.logoutAccount) return;
+    try {
+      const res = await provider.logoutAccount(email);
+      if (res.accounts.length === 0) {
+        setAuthState(false);
+        setAccounts([]);
+        setSelectedId(null);
+        setDetail(null);
+        setMessages([]);
+      } else {
+        setAccounts(res.accounts);
+        if (email === authState) {
+          const next = res.email ?? res.accounts[0];
+          setAuthState(next);
+          setSelectedId(null);
+          setDetail(null);
+          setMessages([]);
+          setRefreshToken((n) => n + 1);
+        }
+      }
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : "Remove account failed");
+    }
+  }
+
+  async function handleAddAccountSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!addAccountEmail.trim() || !addAccountPass) return;
+    setAddAccountError("");
+    const apiBase = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? "http://localhost:4010";
+    try {
+      const res = await fetch(`${apiBase}/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ email: addAccountEmail.trim(), password: addAccountPass }),
+      });
+      const data = await res.json() as { error?: string; accounts?: string[]; email?: string };
+      if (!res.ok) throw new Error(data.error ?? "Login failed");
+      setAccounts(data.accounts ?? [addAccountEmail.trim()]);
+      setAddingAccount(false);
+      setAddAccountEmail("");
+      setAddAccountPass("");
+      showToast(`Added ${addAccountEmail.trim()}`);
+    } catch (err) {
+      setAddAccountError(err instanceof Error ? err.message : "Login failed");
+    }
   }
 
   // Tab title badge
@@ -743,7 +832,7 @@ export function App() {
     return (
       <LoginPage
         apiBase={apiBase}
-        onLogin={(email) => setAuthState(email)}
+        onLogin={(email, accts) => { setAuthState(email); setAccounts(accts); }}
       />
     );
   }
@@ -817,6 +906,62 @@ export function App() {
         />
       )}
 
+      {/* Add account modal */}
+      {addingAccount && (
+        <div
+          className="mf-login-overlay"
+          onClick={(e) => e.target === e.currentTarget && setAddingAccount(false)}
+        >
+          <form className="mf-login-card" onSubmit={handleAddAccountSubmit} aria-label="Add account">
+            <div className="mf-login-logo" style={{ fontSize: "16px" }}>Add account</div>
+            <div className="mf-login-field">
+              <label htmlFor="mf-add-email">Email</label>
+              <input
+                id="mf-add-email"
+                type="email"
+                value={addAccountEmail}
+                onChange={(e) => setAddAccountEmail(e.target.value)}
+                placeholder="you@example.com"
+                autoComplete="email"
+                autoFocus
+                required
+              />
+            </div>
+            <div className="mf-login-field">
+              <label htmlFor="mf-add-pass">Password</label>
+              <input
+                id="mf-add-pass"
+                type="password"
+                value={addAccountPass}
+                onChange={(e) => setAddAccountPass(e.target.value)}
+                placeholder="••••••••"
+                autoComplete="current-password"
+                required
+              />
+            </div>
+            {addAccountError && (
+              <div className="mf-login-error" role="alert">{addAccountError}</div>
+            )}
+            <div style={{ display: "flex", gap: "8px", marginTop: "4px" }}>
+              <button
+                className="mf-login-submit"
+                type="submit"
+                disabled={!addAccountEmail.trim() || !addAccountPass}
+              >
+                Add
+              </button>
+              <button
+                className="mf-compose-discard"
+                type="button"
+                onClick={() => { setAddingAccount(false); setAddAccountEmail(""); setAddAccountPass(""); setAddAccountError(""); }}
+              >
+                Cancel
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
       {/* Toast */}
       {(toast || pendingSend) && (
         <div className="mf-toast" role="status" aria-live="polite" aria-atomic="true">
@@ -841,6 +986,39 @@ export function App() {
       {/* Sidebar */}
       <aside className={`mf-sidebar${sidebarOpen ? " open" : ""}`} aria-label="Navigation">
         <div className="mf-sidebar-logo">MailFrame</div>
+
+        {/* Account switcher (bridge mode only) */}
+        {providerId === "api" && accounts.length > 0 && (
+          <div className="mf-account-list">
+            {accounts.map((acct) => (
+              <div key={acct} className={`mf-account-item${acct === authState ? " active" : ""}`}>
+                <button
+                  className="mf-account-switch"
+                  onClick={() => { if (acct !== authState) handleSwitchAccount(acct); }}
+                  title={acct}
+                >
+                  <span className="mf-account-avatar">{acct[0].toUpperCase()}</span>
+                  <span className="mf-account-email">{acct}</span>
+                </button>
+                <button
+                  className="mf-account-remove"
+                  onClick={() => handleLogoutAccount(acct)}
+                  aria-label={`Remove ${acct}`}
+                  title="Remove account"
+                >
+                  ✕
+                </button>
+              </div>
+            ))}
+            <button
+              className="mf-account-add"
+              onClick={() => setAddingAccount(true)}
+            >
+              + Add account
+            </button>
+          </div>
+        )}
+
         <button
           className="mf-compose-btn"
           onClick={() => { setCompose({ type: "new" }); setSidebarOpen(false); }}
@@ -1013,6 +1191,21 @@ export function App() {
           >
             ⋮≡
           </button>
+          {provider.markRead && visibleMessages.some((m) => m.unread) && (
+            <button
+              className="mf-mark-all-read"
+              title="Mark all as read"
+              aria-label="Mark all messages as read"
+              onClick={() => {
+                const unreadIds = visibleMessages.filter((m) => m.unread).map((m) => m.id);
+                provider.markRead?.(unreadIds, true);
+                setMessages((prev) => prev.map((m) => ({ ...m, unread: false })));
+                setFolders((prev) => prev.map((f) => f.id === activeFolderId ? { ...f, unreadCount: 0 } : f));
+              }}
+            >
+              ✓✓
+            </button>
+          )}
           {snoozedIds.size > 0 && (
             <span className="mf-snooze-badge" title={`${snoozedIds.size} snoozed`}>
               {snoozedIds.size} snoozed
@@ -1378,7 +1571,10 @@ export function App() {
                 aria-label={detail.subject}
                 // eslint-disable-next-line react/no-danger
                 dangerouslySetInnerHTML={{
-                  __html: DOMPurify.sanitize(detail.bodyHtml, {
+                  __html: DOMPurify.sanitize(
+                    detail.inlineParts?.length
+                      ? resolveInlineImages(detail.bodyHtml, detail.id, detail.inlineParts, apiBase)
+                      : detail.bodyHtml, {
                     ALLOWED_TAGS: [
                       "a", "b", "blockquote", "br", "caption", "code", "col", "colgroup",
                       "dd", "del", "div", "dl", "dt", "em", "figcaption", "figure",

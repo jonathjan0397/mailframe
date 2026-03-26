@@ -1,5 +1,25 @@
 # Changelog
 
+## 1.15.0 — 2026-03-26
+
+Email templates and multi-account support.
+
+### Added
+- **Email templates** — compose footer 💾 button saves current subject + body as a named template (prompt for name); "Apply template…" select appears in compose fields when templates exist; templates stored in `localStorage`
+- **Multi-account sessions** — PHP bridge now stores `$_SESSION['mf_accounts'][email]` allowing multiple IMAP accounts per browser session; active account tracked in `$_SESSION['mf_active']`; logging in again adds a second account without destroying the first
+- **Account switcher** — sidebar (API mode) lists all signed-in accounts with avatar initials; click to switch active account; ✕ to remove individual account; "+ Add account" button opens an overlay login form to add additional accounts
+- **New PHP routes** — `POST /auth/switch` (change active account), `POST /auth/logout-account` (remove one account; destroys session when last account removed)
+- **MailProvider interface** — two new optional methods: `switchAccount(email)` and `logoutAccount(email)`; `apiProvider` implements both
+- **Recreated deploy script** (`deploy/deploy.js`) — FTP deployment via `basic-ftp`; targets: `mailframe`, `mailframe-php`, `htaccess`, `all`; credentials read from env vars
+
+### Changed
+- `LoginPage.tsx` — `onLogin` callback now receives `(email, accounts[])` from the login response
+- `App.tsx` — `accounts: string[]` state tracked alongside `authState`; `handleLogout` clears both; new `handleSwitchAccount`, `handleLogoutAccount`, `handleAddAccountSubmit` handlers
+- `server-php/index.php` — `mf_require_auth()` supports both new multi-account and legacy single-account session structures; `/auth/login` and `/auth/me` return `accounts` array in response
+- `global.css` — account switcher styles (`.mf-account-list`, `.mf-account-item`, `.mf-account-avatar`, etc.); template select styles
+
+---
+
 ## 1.12.0 — 2026-03-26
 
 Login page with theme selection, per-user sessions, and admin server config file.
