@@ -310,8 +310,8 @@ export function App() {
     switch (sortBy) {
       case "date-desc": return list; // server already returns newest-first
       case "date-asc":  return list.reverse();
-      case "unread":    return list.sort((a, b) => Number(b.unread) - Number(a.unread));
-      case "starred":   return list.sort((a, b) => Number(b.starred) - Number(a.starred));
+      case "unread":    return list.filter((m) => m.unread);
+      case "starred":   return list.filter((m) => m.starred);
       case "sender":    return list.sort((a, b) => a.sender.localeCompare(b.sender));
       case "subject":   return list.sort((a, b) => a.subject.localeCompare(b.subject));
       default:          return list;
@@ -1581,10 +1581,10 @@ export function App() {
           >
             <option value="date-desc">Newest</option>
             <option value="date-asc">Oldest</option>
-            <option value="unread">Unread</option>
-            <option value="starred">Starred</option>
-            <option value="sender">Sender</option>
-            <option value="subject">Subject</option>
+            <option value="unread">Unread only</option>
+            <option value="starred">Starred only</option>
+            <option value="sender">By Sender</option>
+            <option value="subject">By Subject</option>
           </select>
           {provider.markRead && sortedMessages.some((m) => m.unread) && (
             <button
