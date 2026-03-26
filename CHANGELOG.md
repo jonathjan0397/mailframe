@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.11.0 — 2026-03-26
+
+Snooze messages, drag-to-folder, and resizable split pane.
+
+### Added
+- **Snooze messages** — Snooze button in reading pane actions opens a picker: "Later today (+3h)", "Tomorrow 9am", "This weekend", "Next week"; snoozed messages are hidden from Inbox until their wake time; wake time and IDs persisted in `localStorage['mailframe-snoozed']`; on app mount and window focus, expired snoozes are cleared and a "N messages woke up" toast fires; snoozed count badge visible in list header; snoozed message dismissed from reading pane on snooze
+- **Drag messages to folders** — message rows in both flat and thread view are `draggable`; dragging carries serialized message IDs via `dataTransfer`; sidebar folder items accept drops and call `moveMessages` on drop; drag-over state highlights the target folder in accent color; thread-view rows drag the entire thread's message IDs; multi-selected messages all drag together
+- **Resizable message list / reading pane** — `mf-pane-resizer` divider between list and pane is draggable; `mousedown` → global `mousemove`/`mouseup` listeners track delta; list width clamped 200–700px; persisted to `localStorage['mailframe-list-width']`; hidden on mobile where panes stack full-screen
+
+### Changed
+- `src/app/App.tsx` — `SnoozedEntry` type, `getSnoozed`, `nextDayAt`, `nextWeekdayAt` helpers; `snoozedIds`, `snoozePicker`, `dragOverFolder`, `listWidth` state; `listWidthRef`; `visibleMessages` useMemo filters snoozed from INBOX; `threadGroups` now built from `visibleMessages`; expired-snooze effect on mount+focus; `selectedId`-change effect clears `snoozePicker`; `handleSnooze`, `handleResizerMouseDown`; `allSelected`/`handleSelectAll` use `visibleMessages`; virtualizer count uses `visibleMessages`; folder items gain drag-over/drop handlers; list section width inline style; resizer div; snooze picker in reading pane actions; draggable flat and thread rows; `snoozePicker` Escape handling
+- `src/app/global.css` — resizer styles, drag-over folder highlight, drag cursor on message rows, snooze badge, snooze picker popover, mobile overrides (resizer hidden, list forced full width)
+
+---
+
 ## 1.10.0 — 2026-03-26
 
 Rich-text compose editor and conversation thread view.

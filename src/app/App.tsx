@@ -48,6 +48,30 @@ function buildThreadGroups(msgs: MailItem[]): ThreadGroup[] {
 }
 
 const CONTACTS_KEY = "mailframe-contacts";
+const SNOOZE_KEY = "mailframe-snoozed";
+const LIST_WIDTH_KEY = "mailframe-list-width";
+
+type SnoozedEntry = { id: string; wakeAt: number };
+
+function getSnoozed(): SnoozedEntry[] {
+  try { return JSON.parse(localStorage.getItem(SNOOZE_KEY) ?? "[]") as SnoozedEntry[]; }
+  catch { return []; }
+}
+
+function nextDayAt(hour: number): number {
+  const d = new Date();
+  d.setDate(d.getDate() + 1);
+  d.setHours(hour, 0, 0, 0);
+  return d.getTime();
+}
+
+function nextWeekdayAt(targetDay: number, hour: number): number {
+  const d = new Date();
+  const daysAhead = ((targetDay - d.getDay() + 7) % 7) || 7;
+  d.setDate(d.getDate() + daysAhead);
+  d.setHours(hour, 0, 0, 0);
+  return d.getTime();
+}
 
 const SYSTEM_FOLDER_IDS = new Set([
   "INBOX", "Sent", "Sent Items", "Drafts", "Trash", "Junk", "Spam", "Archive",
@@ -97,6 +121,17 @@ export function App() {
   const [showKeyboardHelp, setShowKeyboardHelp] = useState(false);
   const [threadView, setThreadView] = useState(false);
   const [expandedThreadKey, setExpandedThreadKey] = useState<string | null>(null);
+  const [snoozedIds, setSnoozedIds] = useState<Set<string>>(() => {
+    const entries = getSnoozed();
+    const now = Date.now();
+    return new Set(entries.filter((e) => e.wakeAt > now).map((e) => e.id));
+  });
+  const [snoozePicker, setSnoozePicker] = useState<string | null>(null);
+  const [dragOverFolder, setDragOverFolder] = useState<string | null>(null);
+  const [listWidth, setListWidth] = useState(() => {
+    const saved = parseInt(localStorage.getItem(LIST_WIDTH_KEY) ?? "380", 10);
+    return isNaN(saved) ? 380 : Math.max(200, Math.min(700, saved));
+  });
   // Folder management
   const [creatingFolder, setCreatingFolder] = useState(false);
   const [newFolderName, setNewFolderName] = useState("");
@@ -108,6 +143,8 @@ export function App() {
   const messageIdsRef = useRef<Set<string>>(new Set());
   const keyHandlerRef = useRef<(e: KeyboardEvent) => void>(() => {});
   const newFolderInputRef = useRef<HTMLInputElement>(null);
+  const listWidthRef = useRef(listWidth);
+  listWidthRef.current = listWidth;
 
   const provider = useMemo(
     () => (providerId === "demo" ? demoProvider : apiProvider),
@@ -120,9 +157,17 @@ export function App() {
     [folders],
   );
 
+  const visibleMessages = useMemo(
+    () =>
+      activeFolderId === "INBOX"
+        ? messages.filter((m) => !snoozedIds.has(m.id))
+        : messages,
+    [messages, snoozedIds, activeFolderId],
+  );
+
   const threadGroups = useMemo(
-    () => (threadView ? buildThreadGroups(messages) : []),
-    [messages, threadView],
+    () => (threadView ? buildThreadGroups(visibleMessages) : []),
+    [visibleMessages, threadView],
   );
 
   // Apply theme
@@ -238,6 +283,27 @@ export function App() {
   useEffect(() => {
     if (creatingFolder) newFolderInputRef.current?.focus();
   }, [creatingFolder]);
+
+  // Check for snoozed messages that have expired (on mount + window focus)
+  useEffect(() => {
+    function checkSnooze() {
+      const entries = getSnoozed();
+      const now = Date.now();
+      const expired = entries.filter((e) => e.wakeAt <= now);
+      if (expired.length > 0) {
+        const remaining = entries.filter((e) => e.wakeAt > now);
+        localStorage.setItem(SNOOZE_KEY, JSON.stringify(remaining));
+        setSnoozedIds(new Set(remaining.map((e) => e.id)));
+        setToast(`${expired.length} snoozed message${expired.length !== 1 ? "s" : ""} woke up`);
+      }
+    }
+    checkSnooze();
+    window.addEventListener("focus", checkSnooze);
+    return () => window.removeEventListener("focus", checkSnooze);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Close snooze picker when selected message changes
+  useEffect(() => { setSnoozePicker(null); }, [selectedId]);
 
   // Register stable keyboard listener
   useEffect(() => {
@@ -383,6 +449,37 @@ export function App() {
     showToast("Marked as unread");
   }
 
+  function handleSnooze(id: string, wakeAt: number) {
+    const entries = getSnoozed().filter((e) => e.id !== id);
+    entries.push({ id, wakeAt });
+    localStorage.setItem(SNOOZE_KEY, JSON.stringify(entries));
+    setSnoozedIds((prev) => new Set([...prev, id]));
+    setSnoozePicker(null);
+    if (id === selectedId) { setSelectedId(null); setDetail(null); }
+    const when = new Date(wakeAt);
+    showToast(
+      `Snoozed until ${when.toLocaleString([], { weekday: "short", hour: "2-digit", minute: "2-digit" })}`,
+    );
+  }
+
+  function handleResizerMouseDown(e: React.MouseEvent<HTMLDivElement>) {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startWidth = listWidthRef.current;
+    function onMove(ev: MouseEvent) {
+      const next = Math.max(200, Math.min(700, startWidth + ev.clientX - startX));
+      setListWidth(next);
+      listWidthRef.current = next;
+    }
+    function onUp() {
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+      localStorage.setItem(LIST_WIDTH_KEY, String(listWidthRef.current));
+    }
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+  }
+
   function handleToggleSelect(id: string, e: React.MouseEvent) {
     e.stopPropagation();
     setSelectedIds((prev) => {
@@ -393,10 +490,10 @@ export function App() {
   }
 
   function handleSelectAll() {
-    if (selectedIds.size === messages.length) {
+    if (selectedIds.size === visibleMessages.length) {
       setSelectedIds(new Set());
     } else {
-      setSelectedIds(new Set(messages.map((m) => m.id)));
+      setSelectedIds(new Set(visibleMessages.map((m) => m.id)));
     }
   }
 
@@ -460,6 +557,7 @@ export function App() {
 
     if (e.key === "Escape") {
       if (showKeyboardHelp) { setShowKeyboardHelp(false); return; }
+      if (snoozePicker) { setSnoozePicker(null); return; }
       if (compose) { setCompose(null); return; }
       if (settingsOpen) { setSettingsOpen(false); return; }
       if (creatingFolder) { setCreatingFolder(false); setNewFolderName(""); return; }
@@ -482,7 +580,7 @@ export function App() {
   };
 
   const rowVirtualizer = useVirtualizer({
-    count: threadView ? threadGroups.length : messages.length,
+    count: threadView ? threadGroups.length : visibleMessages.length,
     getScrollElement: () => messagesListRef.current,
     estimateSize: () => 73,
     overscan: 8,
@@ -491,7 +589,7 @@ export function App() {
   const activeFolder = folders.find((f) => f.id === activeFolderId);
   const moveTargets = folders.filter((f) => f.id !== activeFolderId && f.id !== "Trash");
   const bulkActive = selectedIds.size > 0;
-  const allSelected = messages.length > 0 && selectedIds.size === messages.length;
+  const allSelected = visibleMessages.length > 0 && selectedIds.size === visibleMessages.length;
   const isTrash = activeFolder?.label === "Trash" || activeFolderId === "Trash";
   const hasReplyAll = !!(detail?.to?.length || detail?.cc?.length);
   const canManageFolders = providerId === "api" && !!provider.createFolder;
@@ -605,7 +703,7 @@ export function App() {
                 role="button"
                 tabIndex={0}
                 aria-selected={folder.id === activeFolderId}
-                className={`mf-folder-item${folder.id === activeFolderId ? " active" : ""}`}
+                className={`mf-folder-item${folder.id === activeFolderId ? " active" : ""}${dragOverFolder === folder.id ? " drag-over" : ""}`}
                 onClick={() => { setActiveFolderId(folder.id); setSidebarOpen(false); }}
                 onKeyDown={(e) => {
                   if (e.key === "Enter" || e.key === " ") {
@@ -613,6 +711,19 @@ export function App() {
                     setActiveFolderId(folder.id);
                     setSidebarOpen(false);
                   }
+                }}
+                onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; setDragOverFolder(folder.id); }}
+                onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragOverFolder(null); }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  setDragOverFolder(null);
+                  try {
+                    const ids = JSON.parse(e.dataTransfer.getData("text/plain")) as string[];
+                    if (!ids.length || folder.id === activeFolderId) return;
+                    provider.moveMessages?.(ids, folder.id);
+                    removeMessages(ids);
+                    showToast(`Moved to ${folder.label}`);
+                  } catch { /* ignore */ }
                 }}
               >
                 <span>{folder.label}</span>
@@ -696,7 +807,7 @@ export function App() {
       </aside>
 
       {/* Message list */}
-      <section className="mf-list" aria-label="Message list">
+      <section className="mf-list" style={{ width: `${listWidth}px` }} aria-label="Message list">
         <div className="mf-list-header">
           <button
             className="mf-menu-toggle"
@@ -724,6 +835,11 @@ export function App() {
           >
             ⋮≡
           </button>
+          {snoozedIds.size > 0 && (
+            <span className="mf-snooze-badge" title={`${snoozedIds.size} snoozed`}>
+              {snoozedIds.size} snoozed
+            </span>
+          )}
           {newMessageCount > 0 && (
             <button
               className="mf-new-badge"
@@ -772,11 +888,13 @@ export function App() {
           </div>
         )}
 
-        {!mailboxLoading && !mailboxError && messages.length === 0 && (
-          <div className="mf-messages-empty">No messages</div>
+        {!mailboxLoading && !mailboxError && visibleMessages.length === 0 && (
+          <div className="mf-messages-empty">
+            {messages.length > 0 && snoozedIds.size > 0 ? "All messages snoozed" : "No messages"}
+          </div>
         )}
 
-        {!mailboxLoading && !mailboxError && messages.length > 0 && (
+        {!mailboxLoading && !mailboxError && visibleMessages.length > 0 && (
           <ul
             ref={messagesListRef}
             className="mf-messages"
@@ -813,6 +931,14 @@ export function App() {
                         isSelected ? "selected" : "",
                       ].filter(Boolean).join(" ")}
                       style={rowStyle}
+                      draggable
+                      onDragStart={(e) => {
+                        const threadMsgIds = messages
+                          .filter((m) => (normalizeSubject(m.subject) || m.subject.toLowerCase()) === group.key)
+                          .map((m) => m.id);
+                        e.dataTransfer.setData("text/plain", JSON.stringify(threadMsgIds));
+                        e.dataTransfer.effectAllowed = "move";
+                      }}
                       onClick={() => {
                         setExpandedThreadKey(group.key);
                         setSelectedId(group.latestMsg.id);
@@ -852,7 +978,7 @@ export function App() {
                   );
                 }
 
-                const msg = messages[virtualItem.index];
+                const msg = visibleMessages[virtualItem.index];
                 return (
                   <li
                     key={msg.id}
@@ -867,6 +993,14 @@ export function App() {
                       selectedIds.has(msg.id) ? "checked" : "",
                     ].filter(Boolean).join(" ")}
                     style={rowStyle}
+                    draggable
+                    onDragStart={(e) => {
+                      const ids = selectedIds.size > 0 && selectedIds.has(msg.id)
+                        ? [...selectedIds]
+                        : [msg.id];
+                      e.dataTransfer.setData("text/plain", JSON.stringify(ids));
+                      e.dataTransfer.effectAllowed = "move";
+                    }}
                     onClick={() => { setSelectedId(msg.id); setSelectedIds(new Set()); }}
                     onKeyDown={(e) => {
                       if (e.key === "Enter" || e.key === " ") {
@@ -931,6 +1065,15 @@ export function App() {
         )}
       </section>
 
+      {/* Resizable divider */}
+      <div
+        className="mf-pane-resizer"
+        onMouseDown={handleResizerMouseDown}
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="Resize message list"
+      />
+
       {/* Reading pane */}
       <main
         className={`mf-pane${selectedId ? " has-message" : ""}`}
@@ -974,6 +1117,24 @@ export function App() {
               )}
               <button className="mf-action-btn" onClick={handleForward}>Forward</button>
               <button className="mf-action-btn" onClick={handleMarkUnread}>Mark unread</button>
+              <div className="mf-snooze-wrapper">
+                <button
+                  className="mf-action-btn"
+                  onClick={() => setSnoozePicker(snoozePicker === detail.id ? null : detail.id)}
+                  aria-expanded={snoozePicker === detail.id}
+                  aria-haspopup="menu"
+                >
+                  Snooze
+                </button>
+                {snoozePicker === detail.id && (
+                  <div className="mf-snooze-picker" role="menu" aria-label="Snooze until">
+                    <button className="mf-snooze-option" role="menuitem" onClick={() => handleSnooze(detail.id, Date.now() + 3 * 3_600_000)}>Later today (+3h)</button>
+                    <button className="mf-snooze-option" role="menuitem" onClick={() => handleSnooze(detail.id, nextDayAt(9))}>Tomorrow 9am</button>
+                    <button className="mf-snooze-option" role="menuitem" onClick={() => handleSnooze(detail.id, nextWeekdayAt(6, 9))}>This weekend</button>
+                    <button className="mf-snooze-option" role="menuitem" onClick={() => handleSnooze(detail.id, nextWeekdayAt(1, 9))}>Next week</button>
+                  </div>
+                )}
+              </div>
               <button className="mf-action-btn" onClick={() => handleArchive()}>Archive</button>
               <button className="mf-action-btn" onClick={handleSpam}>Spam</button>
               <button className="mf-action-btn" onClick={handlePrint}>Print</button>
