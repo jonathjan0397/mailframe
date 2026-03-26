@@ -543,26 +543,13 @@ if ($mf_method === 'GET' && $mf_route === 'mailbox') {
 
     $server = mf_imap_server();
 
-    // Single connection for both folder listing and message fetching.
-    // imap_list() and imap_status() use LIST/STATUS commands which do not
-    // change the selected mailbox, so we can reuse the same handle.
+    // Open connection to the target folder first and fetch messages while
+    // it is still the selected mailbox. Folder enumeration (imap_status)
+    // comes after because some c-client builds implicitly re-SELECT a
+    // mailbox during STATUS, which would break the subsequent fetch.
     $conn  = mf_imap_open($mf_creds, $folder);
     $check = imap_check($conn);
     $total = $check ? (int)$check->Nmsgs : 0;
-
-    // Enumerate folders on the same connection
-    $raw_boxes = imap_list($conn, $server, '*') ?: [];
-    $folders   = [];
-    foreach ($raw_boxes as $box) {
-        $name   = str_replace($server, '', $box);
-        $status = imap_status($conn, $box, SA_MESSAGES | SA_UNSEEN);
-        $folders[] = [
-            'id'          => $name,
-            'label'       => mf_folder_label($name),
-            'count'       => $status ? (int)$status->messages : 0,
-            'unreadCount' => $status ? (int)$status->unseen   : 0,
-        ];
-    }
 
     $messages = [];
     $has_next = false;
@@ -645,6 +632,22 @@ if ($mf_method === 'GET' && $mf_route === 'mailbox') {
             }
         }
     }
+
+    // Enumerate folders after message fetch so imap_status calls cannot
+    // disturb the previously selected mailbox during the fetch above.
+    $raw_boxes = imap_list($conn, $server, '*') ?: [];
+    $folders   = [];
+    foreach ($raw_boxes as $box) {
+        $name   = str_replace($server, '', $box);
+        $status = imap_status($conn, $box, SA_MESSAGES | SA_UNSEEN);
+        $folders[] = [
+            'id'          => $name,
+            'label'       => mf_folder_label($name),
+            'count'       => $status ? (int)$status->messages : 0,
+            'unreadCount' => $status ? (int)$status->unseen   : 0,
+        ];
+    }
+
     imap_close($conn);
 
     mf_json([
