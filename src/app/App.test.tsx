@@ -31,6 +31,6 @@ describe("App", () => {
 
   it("renders the search input", () => {
     render(<App />);
-    expect(screen.getByPlaceholderText("Search mail")).toBeDefined();
+    expect(screen.getByLabelText("Search messages")).toBeDefined();
   });
 });

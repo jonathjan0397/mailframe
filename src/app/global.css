@@ -105,6 +105,107 @@ input {
   font-weight: var(--mf-font-weight-bold, 700);
 }
 
+/* Folder list header row (label + create button) */
+.mf-folders-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 16px 2px;
+}
+
+.mf-folders-label {
+  font-size: var(--mf-font-size-sm, 12px);
+  font-weight: var(--mf-font-weight-bold, 700);
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--mf-color-text-muted, #5f6368);
+}
+
+.mf-folder-create-btn {
+  font-size: 16px;
+  line-height: 1;
+  color: var(--mf-color-text-muted, #5f6368);
+  padding: 2px 4px;
+  border-radius: var(--mf-radius-sm, 4px);
+  transition: color 0.1s, background 0.1s;
+}
+
+.mf-folder-create-btn:hover {
+  color: var(--mf-color-accent, #1a73e8);
+  background: var(--mf-color-hover, #f1f3f4);
+}
+
+/* Delete button on folder items (hidden until hover) */
+.mf-folder-delete-btn {
+  flex-shrink: 0;
+  font-size: 13px;
+  color: var(--mf-color-text-muted, #5f6368);
+  padding: 2px 4px;
+  border-radius: 3px;
+  opacity: 0;
+  transition: opacity 0.1s, color 0.1s, background 0.1s;
+  margin-left: 4px;
+}
+
+.mf-folder-item:hover .mf-folder-delete-btn {
+  opacity: 1;
+}
+
+.mf-folder-delete-btn:hover {
+  color: #c5221f;
+  background: #fce8e6;
+}
+
+/* Inline new folder creation form */
+.mf-folder-create-form {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 12px;
+  border-top: 1px solid var(--mf-color-border, #e0e0e0);
+}
+
+.mf-folder-create-input {
+  flex: 1;
+  padding: 6px 10px;
+  border: 1px solid var(--mf-color-accent, #1a73e8);
+  border-radius: var(--mf-radius-sm, 4px);
+  font-size: var(--mf-font-size-sm, 12px);
+  color: var(--mf-color-text, #202124);
+  background: var(--mf-color-surface, #fff);
+  outline: none;
+}
+
+.mf-folder-create-confirm,
+.mf-folder-create-cancel {
+  flex-shrink: 0;
+  font-size: 14px;
+  padding: 4px 8px;
+  border-radius: var(--mf-radius-sm, 4px);
+  transition: background 0.1s;
+}
+
+.mf-folder-create-confirm {
+  color: var(--mf-color-accent, #1a73e8);
+}
+
+.mf-folder-create-confirm:hover:not(:disabled) {
+  background: var(--mf-color-selected, #e8f0fe);
+}
+
+.mf-folder-create-confirm:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.mf-folder-create-cancel {
+  color: var(--mf-color-text-muted, #5f6368);
+}
+
+.mf-folder-create-cancel:hover {
+  background: var(--mf-color-hover, #f1f3f4);
+}
+
 /* Sidebar footer (settings button) */
 .mf-sidebar-footer {
   padding: 12px 16px;

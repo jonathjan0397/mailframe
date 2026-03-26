@@ -19,6 +19,10 @@ type ComposeMode =
 
 const CONTACTS_KEY = "mailframe-contacts";
 
+const SYSTEM_FOLDER_IDS = new Set([
+  "INBOX", "Sent", "Sent Items", "Drafts", "Trash", "Junk", "Spam", "Archive",
+]);
+
 function saveContact(sender: string) {
   if (!sender || sender === "Unknown") return;
   try {
@@ -61,18 +65,27 @@ export function App() {
   const [newMessageCount, setNewMessageCount] = useState(0);
   const [refreshToken, setRefreshToken] = useState(0);
   const [showKeyboardHelp, setShowKeyboardHelp] = useState(false);
+  // Folder management
+  const [creatingFolder, setCreatingFolder] = useState(false);
+  const [newFolderName, setNewFolderName] = useState("");
 
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const settingsBtnRef = useRef<HTMLButtonElement>(null);
   const messagesListRef = useRef<HTMLUListElement>(null);
   const messageIdsRef = useRef<Set<string>>(new Set());
-  // Ref for keyboard handler — always has the latest closure without re-registering
   const keyHandlerRef = useRef<(e: KeyboardEvent) => void>(() => {});
+  const newFolderInputRef = useRef<HTMLInputElement>(null);
 
   const provider = useMemo(
     () => (providerId === "demo" ? demoProvider : apiProvider),
     [providerId],
+  );
+
+  // Total unread across all folders for tab title
+  const totalUnread = useMemo(
+    () => folders.reduce((sum, f) => sum + (f.unreadCount ?? 0), 0),
+    [folders],
   );
 
   // Apply theme
@@ -80,6 +93,20 @@ export function App() {
     const theme = themeRegistry.find((t) => t.id === activeThemeId) ?? themeRegistry[0];
     applyTheme(theme);
   }, [activeThemeId]);
+
+  // Tab title badge
+  useEffect(() => {
+    document.title = totalUnread > 0 ? `(${totalUnread}) MailFrame` : "MailFrame";
+    return () => { document.title = "MailFrame"; };
+  }, [totalUnread]);
+
+  // Request notification permission once (bridge mode)
+  useEffect(() => {
+    if (providerId !== "api") return;
+    if ("Notification" in window && Notification.permission === "default") {
+      Notification.requestPermission().catch(() => {});
+    }
+  }, [providerId]);
 
   // Clear selection when provider or folder changes
   useEffect(() => {
@@ -127,7 +154,19 @@ export function App() {
           const incoming = snapshot.messages.filter(
             (m) => !messageIdsRef.current.has(m.id),
           );
-          if (incoming.length > 0) setNewMessageCount((n) => n + incoming.length);
+          if (incoming.length > 0) {
+            setNewMessageCount((n) => n + incoming.length);
+            if ("Notification" in window && Notification.permission === "granted") {
+              const body = incoming
+                .slice(0, 3)
+                .map((m) => `${m.sender}: ${m.subject}`)
+                .join("\n");
+              new Notification(
+                `${incoming.length} new message${incoming.length !== 1 ? "s" : ""}`,
+                { body, icon: "/favicon.ico" },
+              );
+            }
+          }
           setFolders(snapshot.folders);
         })
         .catch(() => {});
@@ -157,7 +196,12 @@ export function App() {
     if (!settingsOpen) settingsBtnRef.current?.focus();
   }, [settingsOpen]);
 
-  // Register stable keyboard listener (handler updated via ref each render)
+  // Focus new folder input when create mode activates
+  useEffect(() => {
+    if (creatingFolder) newFolderInputRef.current?.focus();
+  }, [creatingFolder]);
+
+  // Register stable keyboard listener
   useEffect(() => {
     const handler = (e: KeyboardEvent) => keyHandlerRef.current(e);
     document.addEventListener("keydown", handler);
@@ -191,6 +235,36 @@ export function App() {
         setLoadingMore(false);
       })
       .catch(() => setLoadingMore(false));
+  }
+
+  function reloadFolders() {
+    provider.getMailboxSnapshot({ folderId: activeFolderId, query: "", page: 1 })
+      .then((snapshot) => setFolders(snapshot.folders))
+      .catch(() => {});
+  }
+
+  function handleCreateFolder() {
+    const name = newFolderName.trim();
+    if (!name) return;
+    provider.createFolder?.(name)
+      .then(() => {
+        setCreatingFolder(false);
+        setNewFolderName("");
+        reloadFolders();
+        showToast(`Folder "${name}" created`);
+      })
+      .catch(() => showToast("Failed to create folder"));
+  }
+
+  function handleDeleteFolder(folder: MailFolder) {
+    if (!window.confirm(`Delete folder "${folder.label}"? This cannot be undone.`)) return;
+    provider.deleteFolder?.(folder.id)
+      .then(() => {
+        if (activeFolderId === folder.id) setActiveFolderId("INBOX");
+        reloadFolders();
+        showToast(`Folder "${folder.label}" deleted`);
+      })
+      .catch(() => showToast("Failed to delete folder"));
   }
 
   function removeMessages(ids: string[]) {
@@ -336,7 +410,7 @@ export function App() {
     setCompose({ type: "forward", subject: `Fwd: ${detail.subject}`, body: detail.body });
   }, [detail]);
 
-  // Update keyboard handler ref on every render so it always has the latest state
+  // Update keyboard handler ref on every render
   keyHandlerRef.current = (e: KeyboardEvent) => {
     const target = e.target as HTMLElement;
     if (
@@ -350,6 +424,7 @@ export function App() {
       if (showKeyboardHelp) { setShowKeyboardHelp(false); return; }
       if (compose) { setCompose(null); return; }
       if (settingsOpen) { setSettingsOpen(false); return; }
+      if (creatingFolder) { setCreatingFolder(false); setNewFolderName(""); return; }
       if (selectedId) { setSelectedId(null); return; }
       return;
     }
@@ -381,6 +456,7 @@ export function App() {
   const allSelected = messages.length > 0 && selectedIds.size === messages.length;
   const isTrash = activeFolder?.label === "Trash" || activeFolderId === "Trash";
   const hasReplyAll = !!(detail?.to?.length || detail?.cc?.length);
+  const canManageFolders = providerId === "api" && !!provider.createFolder;
 
   return (
     <div className="mf-shell">
@@ -468,7 +544,22 @@ export function App() {
         >
           + Compose
         </button>
+
         <nav>
+          <div className="mf-folders-header">
+            <span className="mf-folders-label">Folders</span>
+            {canManageFolders && (
+              <button
+                className="mf-folder-create-btn"
+                onClick={() => setCreatingFolder(true)}
+                aria-label="New folder"
+                title="New folder"
+              >
+                ＋
+              </button>
+            )}
+          </div>
+
           <ul className="mf-folder-list" role="list" aria-label="Folders">
             {folders.map((folder) => (
               <li
@@ -495,10 +586,55 @@ export function App() {
                     {folder.unreadCount}
                   </span>
                 )}
+                {canManageFolders && !SYSTEM_FOLDER_IDS.has(folder.id) && (
+                  <button
+                    className="mf-folder-delete-btn"
+                    onClick={(e) => { e.stopPropagation(); handleDeleteFolder(folder); }}
+                    aria-label={`Delete ${folder.label}`}
+                    title={`Delete ${folder.label}`}
+                  >
+                    🗑
+                  </button>
+                )}
               </li>
             ))}
           </ul>
+
+          {/* Inline new folder form */}
+          {creatingFolder && (
+            <div className="mf-folder-create-form">
+              <input
+                ref={newFolderInputRef}
+                className="mf-folder-create-input"
+                type="text"
+                value={newFolderName}
+                onChange={(e) => setNewFolderName(e.target.value)}
+                placeholder="Folder name"
+                aria-label="New folder name"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") handleCreateFolder();
+                  if (e.key === "Escape") { setCreatingFolder(false); setNewFolderName(""); }
+                }}
+              />
+              <button
+                className="mf-folder-create-confirm"
+                onClick={handleCreateFolder}
+                disabled={!newFolderName.trim()}
+                aria-label="Create folder"
+              >
+                ✓
+              </button>
+              <button
+                className="mf-folder-create-cancel"
+                onClick={() => { setCreatingFolder(false); setNewFolderName(""); }}
+                aria-label="Cancel"
+              >
+                ✕
+              </button>
+            </div>
+          )}
         </nav>
+
         <div className="mf-sidebar-footer">
           <button
             ref={settingsBtnRef}
@@ -566,8 +702,9 @@ export function App() {
           <input
             className="mf-search"
             type="search"
-            placeholder="Search mail"
+            placeholder="Search — try from: subject: is:unread is:starred"
             aria-label="Search messages"
+            title="Filters: from:name  subject:word  is:unread  is:starred"
             onChange={(e) => handleSearch(e.target.value)}
           />
         </div>
@@ -589,13 +726,7 @@ export function App() {
         )}
 
         {!mailboxLoading && !mailboxError && messages.length === 0 && (
-          <div className="mf-messages-empty">
-            {isTrash && provider.emptyFolder ? (
-              <div style={{ textAlign: "center" }}>
-                <div style={{ marginBottom: 12 }}>Trash is empty</div>
-              </div>
-            ) : "No messages"}
-          </div>
+          <div className="mf-messages-empty">No messages</div>
         )}
 
         {!mailboxLoading && !mailboxError && messages.length > 0 && (
@@ -671,10 +802,7 @@ export function App() {
         {/* Empty Trash */}
         {isTrash && messages.length > 0 && !mailboxLoading && provider.emptyFolder && (
           <div className="mf-load-more">
-            <button
-              className="mf-empty-trash-btn"
-              onClick={handleEmptyFolder}
-            >
+            <button className="mf-empty-trash-btn" onClick={handleEmptyFolder}>
               Empty Trash
             </button>
           </div>

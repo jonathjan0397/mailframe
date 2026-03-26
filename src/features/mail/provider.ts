@@ -45,4 +45,8 @@ export type MailProvider = {
   emptyFolder?: (folderId: string) => Promise<void>;
   /** Fetch a message attachment as base64. */
   getAttachment?: (messageId: string, partId: string) => Promise<{ data: string; filename: string; mimeType: string }>;
+  /** Create a new folder. */
+  createFolder?: (name: string) => Promise<void>;
+  /** Delete a folder. */
+  deleteFolder?: (folderId: string) => Promise<void>;
 };
