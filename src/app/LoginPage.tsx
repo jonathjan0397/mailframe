@@ -4,6 +4,7 @@ import { themeRegistry } from "../themes/registry";
 
 const THEME_KEY = "mailframe-theme";
 const EMAIL_KEY = "mailframe-last-email";
+const SAVED_CREDS_KEY = "mailframe-saved-creds";
 
 type Props = {
   apiBase: string;
@@ -17,6 +18,7 @@ export function LoginPage({ apiBase, onLogin }: Props) {
     () => localStorage.getItem(THEME_KEY) ?? themeRegistry[0].id,
   );
   const [appName, setAppName] = useState("MailFrame");
+  const [rememberMe, setRememberMe] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -25,6 +27,19 @@ export function LoginPage({ apiBase, onLogin }: Props) {
     const theme = themeRegistry.find((t) => t.id === themeId) ?? themeRegistry[0];
     applyTheme(theme);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Restore saved credentials on mount
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(SAVED_CREDS_KEY);
+      if (raw) {
+        const creds = JSON.parse(raw) as { email?: string; password?: string };
+        if (creds.email) setEmail(creds.email);
+        if (creds.password) setPassword(creds.password);
+        setRememberMe(true);
+      }
+    } catch { /* ignore */ }
+  }, []);
 
   // Fetch app name from server config endpoint
   useEffect(() => {
@@ -56,6 +71,11 @@ export function LoginPage({ apiBase, onLogin }: Props) {
       const data = await res.json() as { error?: string; accounts?: string[] };
       if (!res.ok) throw new Error(data.error ?? "Login failed");
       localStorage.setItem(EMAIL_KEY, email.trim());
+      if (rememberMe) {
+        localStorage.setItem(SAVED_CREDS_KEY, JSON.stringify({ email: email.trim(), password }));
+      } else {
+        localStorage.removeItem(SAVED_CREDS_KEY);
+      }
       onLogin(email.trim(), data.accounts ?? [email.trim()]);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Login failed");
@@ -100,6 +120,22 @@ export function LoginPage({ apiBase, onLogin }: Props) {
             required
           />
         </div>
+
+        <div className="mf-login-remember">
+          <input
+            id="mf-login-remember"
+            type="checkbox"
+            checked={rememberMe}
+            onChange={(e) => setRememberMe(e.target.checked)}
+          />
+          <label htmlFor="mf-login-remember">Remember me on this device</label>
+        </div>
+
+        {rememberMe && (
+          <div className="mf-login-warning" role="alert">
+            ⚠ Your password will be saved in this browser. Do not use this on a shared or public computer.
+          </div>
+        )}
 
         <div className="mf-login-field">
           <label htmlFor="mf-login-theme">Theme</label>
