@@ -14,9 +14,9 @@ import type { SendPayload } from "../features/mail/provider";
 
 type ComposeMode =
   | { type: "new" }
-  | { type: "reply"; to: string; subject: string }
-  | { type: "replyAll"; to: string; cc: string; subject: string }
-  | { type: "forward"; subject: string; body: string[] };
+  | { type: "reply"; to: string; subject: string; bodyHtml: string }
+  | { type: "replyAll"; to: string; cc: string; subject: string; bodyHtml: string }
+  | { type: "forward"; subject: string; bodyHtml: string };
 
 type ThreadGroup = {
   key: string;
@@ -46,6 +46,44 @@ function buildThreadGroups(msgs: MailItem[]): ThreadGroup[] {
     groups.push({ key, latestMsg, count: items.length, unreadCount, senders: uniqueSenders });
   }
   return groups;
+}
+
+function escHtml(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+function buildReplyHtml(
+  detail: { sender: string; subject: string; timestamp: string; body: string[]; bodyHtml?: string },
+  type: "reply" | "replyAll" | "forward",
+): string {
+  const sig = (() => { try { return localStorage.getItem("mailframe-signature") ?? ""; } catch { return ""; } })();
+  const sigBlock = sig
+    ? `<p>--&nbsp;<br>${escHtml(sig).replace(/\n/g, "<br>")}</p>`
+    : "";
+
+  const originalHtml = detail.bodyHtml
+    ? detail.bodyHtml
+    : detail.body.map((l) => `<p>${escHtml(l)}</p>`).join("");
+
+  if (type === "forward") {
+    return (
+      `<p><br></p>${sigBlock}` +
+      `<div class="mf-reply-quote">` +
+      `<p style="color:#5f6368;font-size:13px;">---------- Forwarded message ----------</p>` +
+      `<p style="font-size:13px;color:#5f6368;"><b>From:</b> ${escHtml(detail.sender)}</p>` +
+      `<p style="font-size:13px;color:#5f6368;"><b>Date:</b> ${escHtml(detail.timestamp)}</p>` +
+      `<p style="font-size:13px;color:#5f6368;"><b>Subject:</b> ${escHtml(detail.subject)}</p>` +
+      `<br>${originalHtml}</div>`
+    );
+  }
+
+  return (
+    `<p><br></p>${sigBlock}` +
+    `<div class="mf-reply-quote">` +
+    `<p style="color:#5f6368;font-size:13px;">On ${escHtml(detail.timestamp)}, ${escHtml(detail.sender)} wrote:</p>` +
+    `<blockquote style="border-left:3px solid #ccc;padding-left:12px;margin:8px 0;color:#444;">${originalHtml}</blockquote>` +
+    `</div>`
+  );
 }
 
 const CONTACTS_KEY = "mailframe-contacts";
@@ -823,7 +861,7 @@ export function App() {
 
   const handleReply = useCallback(() => {
     if (!detail) return;
-    setCompose({ type: "reply", to: detail.sender, subject: `Re: ${detail.subject}` });
+    setCompose({ type: "reply", to: detail.sender, subject: `Re: ${detail.subject}`, bodyHtml: buildReplyHtml(detail, "reply") });
   }, [detail]);
 
   const handleReplyAll = useCallback(() => {
@@ -834,12 +872,13 @@ export function App() {
       to: detail.sender,
       cc: allRecipients,
       subject: `Re: ${detail.subject}`,
+      bodyHtml: buildReplyHtml(detail, "replyAll"),
     });
   }, [detail]);
 
   const handleForward = useCallback(() => {
     if (!detail) return;
-    setCompose({ type: "forward", subject: `Fwd: ${detail.subject}`, body: detail.body });
+    setCompose({ type: "forward", subject: `Fwd: ${detail.subject}`, bodyHtml: buildReplyHtml(detail, "forward") });
   }, [detail]);
 
   // Update keyboard handler ref on every render
@@ -951,7 +990,7 @@ export function App() {
           initialTo={compose.type === "reply" || compose.type === "replyAll" ? compose.to : ""}
           initialCc={compose.type === "replyAll" ? compose.cc : ""}
           initialSubject={compose.type !== "new" ? compose.subject : ""}
-          initialBody={compose.type === "forward" ? compose.body.join("\n\n") : ""}
+          initialBodyHtml={compose.type !== "new" ? compose.bodyHtml : undefined}
           onSend={handleSend}
           onSendLater={provider.sendMessage ? handleSendLater : undefined}
           onClose={() => setCompose(null)}

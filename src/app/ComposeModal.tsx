@@ -7,6 +7,7 @@ type Props = {
   initialCc?: string;
   initialSubject?: string;
   initialBody?: string;
+  initialBodyHtml?: string;
   onSend: (payload: SendPayload) => void;
   onSendLater?: (payload: SendPayload, scheduledAt: number) => void;
   onClose: () => void;
@@ -75,10 +76,11 @@ function loadDraft(
   initialCc: string,
   initialSubject: string,
   initialBody: string,
+  initialBodyHtml?: string,
 ): DraftData & { isNew: boolean } {
-  const isNew = !initialTo && !initialSubject && !initialBody && !initialCc;
+  const isNew = !initialTo && !initialSubject && !initialBody && !initialCc && !initialBodyHtml;
   if (!isNew) {
-    return { to: initialTo, cc: initialCc, bcc: "", subject: initialSubject, body: initialBody, isNew };
+    return { to: initialTo, cc: initialCc, bcc: "", subject: initialSubject, body: initialBody, bodyHtml: initialBodyHtml, isNew };
   }
   try {
     const raw = localStorage.getItem(DRAFT_KEY);
@@ -123,11 +125,12 @@ export function ComposeModal({
   initialCc = "",
   initialSubject = "",
   initialBody = "",
+  initialBodyHtml,
   onSend,
   onSendLater,
   onClose,
 }: Props) {
-  const draftRef = useRef(loadDraft(initialTo, initialCc, initialSubject, initialBody));
+  const draftRef = useRef(loadDraft(initialTo, initialCc, initialSubject, initialBody, initialBodyHtml));
   const draft = draftRef.current;
 
   const [to, setTo] = useState(draft.to);
