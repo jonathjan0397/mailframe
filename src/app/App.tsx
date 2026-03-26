@@ -51,6 +51,8 @@ function buildThreadGroups(msgs: MailItem[]): ThreadGroup[] {
 const CONTACTS_KEY = "mailframe-contacts";
 const SNOOZE_KEY = "mailframe-snoozed";
 const LIST_WIDTH_KEY = "mailframe-list-width";
+const SIGNATURE_KEY = "mailframe-signature";
+const DRAFT_KEY = "mailframe-draft";
 
 type SnoozedEntry = { id: string; wakeAt: number };
 
@@ -141,8 +143,18 @@ export function App() {
   const [creatingFolder, setCreatingFolder] = useState(false);
   const [newFolderName, setNewFolderName] = useState("");
 
+  // Signature (server-synced when in API mode)
+  const [signature, setSignature] = useState(() => {
+    try { return localStorage.getItem(SIGNATURE_KEY) ?? ""; } catch { return ""; }
+  });
+
+  // Undo send
+  type PendingSend = { payload: SendPayload; timerId: ReturnType<typeof setTimeout> };
+  const [pendingSend, setPendingSend] = useState<PendingSend | null>(null);
+
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const settingsSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const settingsBtnRef = useRef<HTMLButtonElement>(null);
   const messagesListRef = useRef<HTMLUListElement>(null);
   const messageIdsRef = useRef<Set<string>>(new Set());
@@ -193,6 +205,43 @@ export function App() {
       })
       .catch(() => setAuthState(false));
   }, [providerId]);
+
+  // Load settings from server after login
+  useEffect(() => {
+    if (typeof authState !== "string" || !provider.getSettings) return;
+    provider.getSettings().then((s) => {
+      if (typeof s.theme === "string") setActiveThemeId(s.theme);
+      if (typeof s.signature === "string") {
+        setSignature(s.signature);
+        try {
+          if (s.signature) localStorage.setItem(SIGNATURE_KEY, s.signature);
+          else localStorage.removeItem(SIGNATURE_KEY);
+        } catch { /* ignore */ }
+      }
+    }).catch(() => { /* server settings unavailable — keep local values */ });
+  }, [authState]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  function scheduleSaveSettings(patch: Record<string, unknown>) {
+    if (!provider.saveSettings) return;
+    if (settingsSaveTimer.current) clearTimeout(settingsSaveTimer.current);
+    settingsSaveTimer.current = setTimeout(() => {
+      provider.saveSettings?.(patch).catch(() => {});
+    }, 800);
+  }
+
+  function handleThemeChange(id: string) {
+    setActiveThemeId(id);
+    scheduleSaveSettings({ theme: id });
+  }
+
+  function handleSignatureChange(val: string) {
+    setSignature(val);
+    try {
+      if (val) localStorage.setItem(SIGNATURE_KEY, val);
+      else localStorage.removeItem(SIGNATURE_KEY);
+    } catch { /* ignore */ }
+    scheduleSaveSettings({ signature: val });
+  }
 
   async function handleLogout() {
     const apiBase = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? "http://localhost:4010";
@@ -525,9 +574,34 @@ export function App() {
   }
 
   function handleSend(payload: SendPayload) {
-    provider.sendMessage?.(payload);
     setCompose(null);
-    showToast("Message sent");
+    // Cancel any in-flight undo send
+    if (pendingSend) clearTimeout(pendingSend.timerId);
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+
+    const timerId = setTimeout(() => {
+      provider.sendMessage?.(payload);
+      setPendingSend(null);
+      showToast("Message sent");
+    }, 7000);
+
+    setPendingSend({ payload, timerId });
+    setToast("Sending in 7s…");
+  }
+
+  function handleUndoSend() {
+    if (!pendingSend) return;
+    clearTimeout(pendingSend.timerId);
+    // Restore as draft so the user can re-open compose and recover
+    try {
+      const { payload } = pendingSend;
+      localStorage.setItem(DRAFT_KEY, JSON.stringify({
+        to: payload.to, cc: payload.cc ?? "", bcc: payload.bcc ?? "",
+        subject: payload.subject, body: payload.body, bodyHtml: payload.bodyHtml,
+      }));
+    } catch { /* ignore */ }
+    setPendingSend(null);
+    showToast("Send cancelled — draft restored");
   }
 
   async function handleDownloadAttachment(partId: string, filename: string) {
@@ -692,17 +766,24 @@ export function App() {
         <SettingsPanel
           themes={themeRegistry}
           activeThemeId={activeThemeId}
-          onThemeChange={setActiveThemeId}
+          onThemeChange={handleThemeChange}
           providerId={providerId}
           onProviderChange={setProviderId}
+          signature={signature}
+          onSignatureChange={handleSignatureChange}
           onClose={() => setSettingsOpen(false)}
         />
       )}
 
       {/* Toast */}
-      {toast && (
+      {(toast || pendingSend) && (
         <div className="mf-toast" role="status" aria-live="polite" aria-atomic="true">
-          {toast}
+          {pendingSend ? (
+            <>
+              Sending in 7s…{" "}
+              <button className="mf-toast-undo" onClick={handleUndoSend}>Undo</button>
+            </>
+          ) : toast}
         </div>
       )}
 

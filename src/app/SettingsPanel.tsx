@@ -1,7 +1,4 @@
-import { useState } from "react";
 import type { ThemeTokens } from "../themes/tokens";
-
-const SIGNATURE_KEY = "mailframe-signature";
 
 export type ProviderId = "demo" | "api";
 
@@ -11,6 +8,8 @@ type Props = {
   onThemeChange: (id: string) => void;
   providerId: ProviderId;
   onProviderChange: (id: ProviderId) => void;
+  signature: string;
+  onSignatureChange: (val: string) => void;
   onClose: () => void;
 };
 
@@ -20,20 +19,10 @@ export function SettingsPanel({
   onThemeChange,
   providerId,
   onProviderChange,
+  signature,
+  onSignatureChange,
   onClose,
 }: Props) {
-  const [signature, setSignature] = useState(() => {
-    try { return localStorage.getItem(SIGNATURE_KEY) ?? ""; }
-    catch { return ""; }
-  });
-
-  function handleSignatureChange(val: string) {
-    setSignature(val);
-    try {
-      if (val) localStorage.setItem(SIGNATURE_KEY, val);
-      else localStorage.removeItem(SIGNATURE_KEY);
-    } catch { /* ignore */ }
-  }
 
   return (
     <>
@@ -97,7 +86,7 @@ export function SettingsPanel({
                 id="mf-signature"
                 className="mf-settings-textarea"
                 value={signature}
-                onChange={(e) => handleSignatureChange(e.target.value)}
+                onChange={(e) => onSignatureChange(e.target.value)}
                 placeholder="Your signature…"
                 rows={4}
               />
