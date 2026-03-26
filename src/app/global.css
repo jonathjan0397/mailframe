@@ -653,6 +653,34 @@ input {
   color: var(--mf-color-text-muted, #5f6368);
 }
 
+/* New-mail badge in list header */
+.mf-new-badge {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: var(--mf-font-weight-bold, 700);
+  padding: 3px 10px;
+  border-radius: 12px;
+  background: var(--mf-color-accent, #1a73e8);
+  color: var(--mf-color-accent-text, #fff);
+  white-space: nowrap;
+  cursor: pointer;
+  border: none;
+  animation: mf-pulse 2s ease infinite;
+}
+
+@keyframes mf-pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.7; }
+}
+
+/* Draft saved indicator in compose footer */
+.mf-draft-indicator {
+  font-size: var(--mf-font-size-sm, 12px);
+  color: var(--mf-color-text-muted, #5f6368);
+  margin-left: auto;
+  font-style: italic;
+}
+
 /* Load more */
 .mf-load-more {
   flex-shrink: 0;

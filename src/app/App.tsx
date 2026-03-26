@@ -36,11 +36,15 @@ export function App() {
   const [toast, setToast] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [newMessageCount, setNewMessageCount] = useState(0);
+  const [refreshToken, setRefreshToken] = useState(0);
 
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const settingsBtnRef = useRef<HTMLButtonElement>(null);
   const messagesListRef = useRef<HTMLUListElement>(null);
+  // Stable ref to current message ids for polling comparison (avoids stale closure)
+  const messageIdsRef = useRef<Set<string>>(new Set());
 
   const provider = useMemo(
     () => (providerId === "demo" ? demoProvider : apiProvider),
@@ -61,13 +65,19 @@ export function App() {
     setDetailLoading(false);
   }, [provider, activeFolderId]);
 
-  // Load mailbox (always page 1 on context change)
+  // Keep message-id ref in sync for polling
+  useEffect(() => {
+    messageIdsRef.current = new Set(messages.map((m) => m.id));
+  }, [messages]);
+
+  // Load mailbox (always page 1 on context change or manual refresh)
   useEffect(() => {
     let cancelled = false;
     setMailboxLoading(true);
     setMailboxError(null);
     setHasNextPage(false);
     setPage(1);
+    setNewMessageCount(0);
     provider.getMailboxSnapshot({ folderId: activeFolderId, query: search, page: 1 })
       .then((snapshot) => {
         if (cancelled) return;
@@ -82,7 +92,26 @@ export function App() {
         setMailboxLoading(false);
       });
     return () => { cancelled = true; };
-  }, [activeFolderId, search, provider]);
+  }, [activeFolderId, search, provider, refreshToken]);
+
+  // Poll for new messages (60s interval; skipped in demo mode)
+  useEffect(() => {
+    if (providerId === "demo") return;
+    const timer = setInterval(() => {
+      provider.getMailboxSnapshot({ folderId: activeFolderId, query: search, page: 1 })
+        .then((snapshot) => {
+          const incoming = snapshot.messages.filter(
+            (m) => !messageIdsRef.current.has(m.id),
+          );
+          if (incoming.length > 0) {
+            setNewMessageCount((n) => n + incoming.length);
+          }
+          setFolders(snapshot.folders); // keep unread counts current
+        })
+        .catch(() => {}); // silent poll failure
+    }, 60_000);
+    return () => clearInterval(timer);
+  }, [activeFolderId, search, provider, providerId]);
 
   // Load detail — provider intentionally omitted from deps: selection is always
   // cleared before provider changes (see effect above), so this never fires stale.
@@ -112,6 +141,11 @@ export function App() {
   function handleSearch(value: string) {
     if (searchTimer.current) clearTimeout(searchTimer.current);
     searchTimer.current = setTimeout(() => setSearch(value), 250);
+  }
+
+  function handleManualRefresh() {
+    setNewMessageCount(0);
+    setRefreshToken((n) => n + 1);
   }
 
   function handleLoadMore() {
@@ -341,6 +375,15 @@ export function App() {
             aria-label="Select all messages"
           />
           <span className="mf-list-title">{activeFolder?.label ?? "Inbox"}</span>
+          {newMessageCount > 0 && (
+            <button
+              className="mf-new-badge"
+              onClick={handleManualRefresh}
+              aria-label={`${newMessageCount} new message${newMessageCount !== 1 ? "s" : ""}, click to refresh`}
+            >
+              {newMessageCount} new ↑
+            </button>
+          )}
         </div>
 
         {/* Bulk action bar */}

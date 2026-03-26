@@ -4,10 +4,14 @@
  * The app resolves the active theme by id from this array.
  */
 import { lumenTheme } from "./lumen";
+import { eclipseTheme } from "./eclipse";
 import { auroraTheme } from "./aurora";
+import { midnightTheme } from "./midnight";
 import type { ThemeTokens } from "./tokens";
 
 export const themeRegistry: ThemeTokens[] = [
   lumenTheme,
+  eclipseTheme,
   auroraTheme,
+  midnightTheme,
 ];
