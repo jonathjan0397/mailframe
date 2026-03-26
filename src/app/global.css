@@ -376,8 +376,13 @@ input {
   background: var(--mf-color-selected, #e8f0fe);
 }
 
+.mf-message-row.unread {
+  border-left: 3px solid var(--mf-color-accent, #1a73e8);
+}
+
 .mf-message-row.unread .mf-message-sender,
-.mf-message-row.unread .mf-message-subject {
+.mf-message-row.unread .mf-message-subject,
+.mf-message-row.unread .mf-message-date {
   font-weight: var(--mf-font-weight-bold, 700);
   color: var(--mf-color-text, #202124);
 }
