@@ -1,4 +1,7 @@
+import { useState } from "react";
 import type { ThemeTokens } from "../themes/tokens";
+
+const SIGNATURE_KEY = "mailframe-signature";
 
 export type ProviderId = "demo" | "api";
 
@@ -19,6 +22,19 @@ export function SettingsPanel({
   onProviderChange,
   onClose,
 }: Props) {
+  const [signature, setSignature] = useState(() => {
+    try { return localStorage.getItem(SIGNATURE_KEY) ?? ""; }
+    catch { return ""; }
+  });
+
+  function handleSignatureChange(val: string) {
+    setSignature(val);
+    try {
+      if (val) localStorage.setItem(SIGNATURE_KEY, val);
+      else localStorage.removeItem(SIGNATURE_KEY);
+    } catch { /* ignore */ }
+  }
+
   return (
     <>
       <div className="mf-settings-backdrop" onClick={onClose} aria-hidden="true" />
@@ -68,6 +84,24 @@ export function SettingsPanel({
                   )}
                 </button>
               ))}
+            </div>
+          </section>
+
+          <section className="mf-settings-section">
+            <h2 className="mf-settings-section-title">Account</h2>
+            <div className="mf-settings-field">
+              <label className="mf-settings-label" htmlFor="mf-signature">
+                Email signature
+              </label>
+              <textarea
+                id="mf-signature"
+                className="mf-settings-textarea"
+                value={signature}
+                onChange={(e) => handleSignatureChange(e.target.value)}
+                placeholder="Your signature…"
+                rows={4}
+              />
+              <p className="mf-settings-hint">Appended to new compositions automatically.</p>
             </div>
           </section>
 

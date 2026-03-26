@@ -1,5 +1,36 @@
 # Changelog
 
+## 1.8.0 — 2026-03-26
+
+Full standard email feature set: CC/BCC, Reply All, attachments, keyboard shortcuts, signature, spam, print, Empty Trash, contact autocomplete.
+
+### Added
+- **CC/BCC in compose** — "CC/BCC" toggle button in compose reveals CC and BCC fields; all three accept comma-separated addresses; draft auto-save persists CC/BCC; server SMTP transport forwards them to nodemailer
+- **Reply All** — `replyAll` compose mode pre-fills To with original sender, CC with all original To/CC recipients; button visible when detail has `to` or `cc` metadata
+- **Attachments in reading pane** — server parses `bodyStructure` to find attachment parts; detail response includes `attachments?: MailAttachment[]` (partId, filename, mimeType, size); attachment chips rendered below body with ↓ Download button (bridge mode only); downloading fetches base64 via `GET /messages/:id/attachments/:partId`, creates a Blob URL, and triggers browser download
+- **Attachments in compose** — 📎 button opens native file picker (multiple files); selected files listed with name, size, and ✕ remove; files are base64-encoded with `FileReader` before send; server nodemailer `attachments` array handles them on the wire
+- **Email signature** — Settings → Account → textarea persists to `localStorage['mailframe-signature']`; auto-inserted (`\n\n-- \n{sig}`) into fresh new compositions; not applied to reply/forward
+- **Contact autocomplete** — sender is saved to `localStorage['mailframe-contacts']` (max 200) when any message is opened; To/CC/BCC fields in compose use `<datalist>` to suggest saved contacts
+- **Keyboard shortcuts** — global `keydown` handler (ignores inputs/textareas): `c` compose, `r` reply, `a` reply-all, `f` forward, `e` archive, `#` delete, `u` mark unread, `?` show help, `Esc` close/deselect; `?` button in sidebar footer; keyboard help modal with styled `<kbd>` chips
+- **Spam** — Spam button in reading pane moves message to Junk/Spam folder (matched by label or folder id); toast if no spam folder found
+- **Print** — Print button calls `window.print()`; `@media print` CSS hides sidebar/list/actions/overlays and renders the reading pane full-width
+- **Empty Trash** — "Empty Trash" button appears in message list footer when active folder is Trash and provider supports it; calls `POST /messages/empty` → `emptyFolder()` server function which deletes all messages with `1:*`; provider contract adds `emptyFolder?` method
+- **To/CC in reading pane** — `getMessage` now parses `envelope.to` and `envelope.cc` into `"Name <email>"` format; shown below sender in reading pane header
+
+### Changed
+- `src/lib/mail-types.ts` — added `MailAttachment` type; `MailMessageDetail` gains `to?`, `cc?`, `attachments?`
+- `src/features/mail/provider.ts` — `SendPayload` gains `cc?`, `bcc?`, `attachments?: AttachmentPayload[]`; `MailProvider` gains `emptyFolder?`, `getAttachment?`; new `AttachmentPayload` type
+- `server/src/imap.ts` — added `formatAddress()` (full "Name <email>"); `getMessage` fetches `bodyStructure`, parses To/CC from envelope, walks bodyStructure via `walkForAttachments()`; new exports `getAttachment()`, `emptyFolder()`
+- `server/src/smtp.ts` — `sendMail` accepts `cc`, `bcc`, `attachments`
+- `server/src/index.ts` — added `GET /messages/:id/attachments/:partId`, `POST /messages/empty`
+- `src/features/mail/providers/api-provider.ts` — added `emptyFolder`, `getAttachment` implementations; `sendMessage` forwards CC/BCC/attachments
+- `src/app/ComposeModal.tsx` — CC/BCC toggle, file attachment picker, signature auto-insert, contact `<datalist>`, draft saves CC/BCC, `DraftData` extended
+- `src/app/SettingsPanel.tsx` — Account section with signature `<textarea>` persisting to localStorage
+- `src/app/App.tsx` — `ComposeMode` union adds `replyAll`; handlers: `handleReplyAll`, `handleSpam`, `handlePrint`, `handleEmptyFolder`, `handleDownloadAttachment`; keyboard handler via stable ref pattern; contact tracking on detail load; keyboard help modal; Empty Trash footer button; To/CC/attachment display in reading pane; Reply All button (conditional)
+- `src/app/global.css` — CC/BCC toggle, compose attachment list, reading pane address block, attachment chips, download button, Empty Trash button, settings textarea, keyboard help overlay (`kbd` styling), print media query
+
+---
+
 ## 1.7.0 — 2026-03-26
 
 Dark themes (Eclipse + Midnight), new-mail polling badge, draft auto-save.

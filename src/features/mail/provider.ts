@@ -7,12 +7,22 @@ export type MailboxQuery = {
   refreshToken?: number;
 };
 
+export type AttachmentPayload = {
+  filename: string;
+  mimeType: string;
+  /** Base64-encoded file content. */
+  data: string;
+};
+
 export type SendPayload = {
   to: string;
+  cc?: string;
+  bcc?: string;
   subject: string;
   body: string;
   replyToId?: string;
   forwardOfId?: string;
+  attachments?: AttachmentPayload[];
 };
 
 /**
@@ -31,4 +41,8 @@ export type MailProvider = {
   markRead?: (messageIds: string[], read: boolean) => Promise<void>;
   toggleStar?: (messageId: string, starred: boolean) => Promise<void>;
   sendMessage?: (payload: SendPayload) => Promise<void>;
+  /** Empty all messages from a folder (e.g., Trash). */
+  emptyFolder?: (folderId: string) => Promise<void>;
+  /** Fetch a message attachment as base64. */
+  getAttachment?: (messageId: string, partId: string) => Promise<{ data: string; filename: string; mimeType: string }>;
 };

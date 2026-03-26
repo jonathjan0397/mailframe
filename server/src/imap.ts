@@ -26,10 +26,18 @@ function formatTimestamp(date: Date | undefined): string {
   return date.toLocaleDateString([], { month: "short", day: "numeric", year: "numeric" });
 }
 
+/** Display name only — used in message list rows. */
 function formatSender(address: { name?: string; address?: string } | undefined): string {
   if (!address) return "Unknown";
   if (address.name) return address.name;
   return address.address ?? "Unknown";
+}
+
+/** Full "Name <email>" format — used in detail view and reply-to. */
+function formatAddress(address: { name?: string; address?: string } | undefined): string {
+  if (!address) return "Unknown";
+  if (address.name && address.address) return `${address.name} <${address.address}>`;
+  return address.address ?? address.name ?? "Unknown";
 }
 
 function folderLabel(name: string): string {
@@ -42,6 +50,28 @@ function folderLabel(name: string): string {
   return parts[parts.length - 1]
     .replace(/_/g, " ")
     .replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function walkForAttachments(node: any, result: Array<{ partId: string; filename: string; mimeType: string; size: number }>): void {
+  if (!node) return;
+  if (node.childNodes?.length) {
+    for (const child of node.childNodes) walkForAttachments(child, result);
+    return;
+  }
+  const disp = (node.disposition?.type ?? "").toLowerCase();
+  const filename =
+    node.disposition?.parameters?.get?.("filename") ??
+    node.parameters?.get?.("name") ??
+    node.parameters?.get?.("filename");
+  if (filename && (disp === "attachment" || disp === "inline")) {
+    result.push({
+      partId: node.part ?? "1",
+      filename,
+      mimeType: (node.type ?? "application/octet-stream").toLowerCase(),
+      size: node.size ?? 0,
+    });
+  }
 }
 
 export async function getFolders() {
@@ -133,10 +163,11 @@ export async function getMessage(uid: number, mailbox: string) {
   try {
     const lock = await client.getMailboxLock(mailbox);
     try {
-      // Fetch common text and HTML MIME parts
+      // Fetch common text and HTML MIME parts plus body structure
       const msg = await client.fetchOne(`${uid}`, {
         uid: true, envelope: true, flags: true,
         bodyParts: ["1", "1.1", "1.2", "2", "TEXT"],
+        bodyStructure: true,
       }, { uid: true });
 
       if (!msg) throw new Error("Message not found.");
@@ -144,9 +175,11 @@ export async function getMessage(uid: number, mailbox: string) {
       // Mark as read
       await client.messageFlagsAdd(`${uid}`, ["\\Seen"], { uid: true });
 
-      const sender = formatSender(msg.envelope?.from?.[0]);
+      const sender = formatAddress(msg.envelope?.from?.[0]);
       const subject = msg.envelope?.subject ?? "(No subject)";
       const timestamp = formatTimestamp(msg.envelope?.date);
+      const toAddresses = (msg.envelope?.to ?? []).map(formatAddress);
+      const ccAddresses = (msg.envelope?.cc ?? []).map(formatAddress);
 
       // Separate HTML and plain-text parts
       let bodyText = "";
@@ -169,12 +202,62 @@ export async function getMessage(uid: number, mailbox: string) {
         ? bodyText.split(/\n\s*\n/).map((p) => p.replace(/\s+/g, " ").trim()).filter(Boolean)
         : bodyHtml ? [] : ["Message body could not be extracted."];
 
+      // Collect attachment metadata from body structure
+      const attachmentList: Array<{ partId: string; filename: string; mimeType: string; size: number }> = [];
+      if (msg.bodyStructure) walkForAttachments(msg.bodyStructure, attachmentList);
+
       return {
         id: encodeMessageId(uid, mailbox),
         sender, subject, timestamp,
+        to: toAddresses.length > 0 ? toAddresses : undefined,
+        cc: ccAddresses.length > 0 ? ccAddresses : undefined,
         body: paragraphs,
         bodyHtml: bodyHtml || undefined,
+        attachments: attachmentList.length > 0 ? attachmentList : undefined,
       };
+    } finally {
+      lock.release();
+    }
+  } finally {
+    await client.logout();
+  }
+}
+
+export async function getAttachment(uid: number, mailbox: string, partId: string) {
+  const client = buildClient();
+  await client.connect();
+  try {
+    const lock = await client.getMailboxLock(mailbox);
+    try {
+      const msg = await client.fetchOne(`${uid}`, {
+        uid: true,
+        bodyParts: [partId],
+        bodyStructure: true,
+      }, { uid: true });
+
+      if (!msg) throw new Error("Message not found.");
+      const content = msg.bodyParts?.get(partId);
+      if (!content) throw new Error(`Part ${partId} not found.`);
+
+      let filename = "attachment";
+      let mimeType = "application/octet-stream";
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      function findPart(node: any): boolean {
+        if (node.part === partId) {
+          mimeType = (node.type ?? mimeType).toLowerCase();
+          filename =
+            node.disposition?.parameters?.get?.("filename") ??
+            node.parameters?.get?.("name") ??
+            node.parameters?.get?.("filename") ??
+            filename;
+          return true;
+        }
+        return node.childNodes?.some?.(findPart) ?? false;
+      }
+      if (msg.bodyStructure) findPart(msg.bodyStructure);
+
+      return { data: content.toString("base64"), filename, mimeType };
     } finally {
       lock.release();
     }
@@ -205,6 +288,23 @@ export async function deleteMessages(uids: number[], mailbox: string) {
     const lock = await client.getMailboxLock(mailbox);
     try {
       await client.messageDelete(uids.map(String).join(","), { uid: true });
+    } finally {
+      lock.release();
+    }
+  } finally {
+    await client.logout();
+  }
+}
+
+export async function emptyFolder(mailbox: string) {
+  const client = buildClient();
+  await client.connect();
+  try {
+    const lock = await client.getMailboxLock(mailbox);
+    try {
+      const status = await client.status(mailbox, { messages: true });
+      if ((status.messages ?? 0) === 0) return;
+      await client.messageDelete("1:*", { uid: false });
     } finally {
       lock.release();
     }
