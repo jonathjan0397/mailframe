@@ -538,6 +538,7 @@ export function App() {
             (m) => !messageIdsRef.current.has(m.id),
           );
           if (incoming.length > 0) {
+            setMessages((prev) => [...incoming, ...prev]);
             setNewMessageCount((n) => n + incoming.length);
             playNotifSound();
             // In-app popup cards (bottom-right)
