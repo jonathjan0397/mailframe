@@ -1,5 +1,28 @@
 # Changelog
 
+## 1.12.0 — 2026-03-26
+
+Login page with theme selection, per-user sessions, and admin server config file.
+
+### Added
+- **Login page** — shown when bridge provider is active and no valid session exists; email + password fields; theme dropdown applies and persists the theme immediately (before login); app name fetched from `/auth/config`; last-used email remembered across visits
+- **Per-user sessions** — `POST /auth/login` tests IMAP credentials, issues an httpOnly `mf_session` cookie (TTL configurable); `GET /auth/me` checks session validity; `POST /auth/logout` clears cookie + session; all mailbox/message endpoints require a valid session cookie
+- **Admin server config** (`server/mailframe.config.json`) — admins set IMAP/SMTP host, port, TLS options once; users supply only their email + password at login; optional `allowedDomains` list restricts which email domains can sign in; `sessionTtlHours` controls how long sessions last; config falls back to env vars when file is absent
+- **Theme persistence** — theme selection on the login page saves to localStorage and is restored on next visit; main app also persists theme changes immediately
+- **Sign-out button** (⏏) in sidebar footer when bridge mode is active
+
+### Changed
+- `server/src/imap.ts` — all exported functions now accept `ImapCredentials` as first param; IMAP connection config read from `config.imap` instead of env vars
+- `server/src/smtp.ts` — `sendMail` accepts `SmtpCredentials` first param; SMTP config from `config.smtp`; `from` address derived from the authenticated user's email
+- `server/src/index.ts` — added `config`, `session` imports; cookie helpers; `requireAuth` middleware; `/auth/login`, `/auth/me`, `/auth/logout`, `/auth/config` endpoints; all routes protected by `requireAuth` and thread `req.creds` into IMAP/SMTP calls
+- `server/src/config.ts` — new: loads `mailframe.config.json`, falls back to env vars
+- `server/src/session.ts` — new: in-memory session store with UUID tokens and hourly GC
+- `src/app/LoginPage.tsx` — new component
+- `src/app/App.tsx` — `authState` state; auth check effect on provider change; `handleLogout`; renders `LoginPage` when unauthenticated in api mode; sign-out button; theme persists to localStorage
+- `src/app/global.css` — login card styles
+
+---
+
 ## 1.11.0 — 2026-03-26
 
 Snooze messages, drag-to-folder, and resizable split pane.

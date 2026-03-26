@@ -1423,6 +1423,98 @@ kbd {
   }
 }
 
+/* ── Login page ────────────────────────────────────────────────── */
+.mf-login-overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--mf-color-bg);
+  z-index: 1000;
+}
+
+.mf-login-card {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  width: 100%;
+  max-width: 380px;
+  padding: 36px 32px;
+  background: var(--mf-color-surface);
+  border: 1px solid var(--mf-color-border);
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12);
+}
+
+.mf-login-logo {
+  font-size: 1.5rem;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  color: var(--mf-color-accent);
+  text-align: center;
+  margin-bottom: 4px;
+}
+
+.mf-login-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.mf-login-field label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--mf-color-text);
+}
+
+.mf-login-field input,
+.mf-login-field select {
+  padding: 9px 12px;
+  border: 1px solid var(--mf-color-border);
+  border-radius: 6px;
+  background: var(--mf-color-bg);
+  color: var(--mf-color-text);
+  font-size: 14px;
+  outline: none;
+}
+
+.mf-login-field input:focus,
+.mf-login-field select:focus {
+  border-color: var(--mf-color-accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--mf-color-accent) 20%, transparent);
+}
+
+.mf-login-error {
+  padding: 8px 12px;
+  border-radius: 6px;
+  background: color-mix(in srgb, #ef4444 12%, transparent);
+  border: 1px solid color-mix(in srgb, #ef4444 30%, transparent);
+  color: #ef4444;
+  font-size: 13px;
+}
+
+.mf-login-submit {
+  padding: 10px;
+  border: none;
+  border-radius: 6px;
+  background: var(--mf-color-accent);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.mf-login-submit:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.mf-login-submit:not(:disabled):hover {
+  opacity: 0.88;
+}
+
 /* ── Rich-text compose toolbar ─────────────────────────────────── */
 .mf-compose-toolbar {
   display: flex;

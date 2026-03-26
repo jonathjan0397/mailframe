@@ -1,17 +1,18 @@
 import { ImapFlow } from "imapflow";
 import { encodeMessageId } from "./encode.js";
+import { config } from "./config.js";
+
+export type ImapCredentials = { user: string; pass: string };
 
 const PAGE_SIZE = 25;
 
-function buildClient(): ImapFlow {
+function buildClient(creds: ImapCredentials): ImapFlow {
   return new ImapFlow({
-    host: process.env.IMAP_HOST ?? "",
-    port: parseInt(process.env.IMAP_PORT ?? "993", 10),
-    secure: process.env.IMAP_SECURE !== "false",
-    auth: {
-      user: process.env.IMAP_USER ?? "",
-      pass: process.env.IMAP_PASS ?? "",
-    },
+    host: config.imap.host,
+    port: config.imap.port,
+    secure: config.imap.secure,
+    auth: { user: creds.user, pass: creds.pass },
+    tls: config.imap.tls as Record<string, boolean> | undefined,
     logger: false,
   });
 }
@@ -74,8 +75,8 @@ function walkForAttachments(node: any, result: Array<{ partId: string; filename:
   }
 }
 
-export async function getFolders() {
-  const client = buildClient();
+export async function getFolders(creds: ImapCredentials) {
+  const client = buildClient(creds);
   await client.connect();
   try {
     const list = await client.list();
@@ -133,8 +134,8 @@ function extractPreview(bodyParts: Map<string, Buffer> | undefined): string {
   return "";
 }
 
-export async function getMailbox(mailbox: string, page: number, query: string) {
-  const client = buildClient();
+export async function getMailbox(creds: ImapCredentials, mailbox: string, page: number, query: string) {
+  const client = buildClient(creds);
   await client.connect();
   try {
     const lock = await client.getMailboxLock(mailbox);
@@ -197,8 +198,8 @@ export async function getMailbox(mailbox: string, page: number, query: string) {
   }
 }
 
-export async function getMessage(uid: number, mailbox: string) {
-  const client = buildClient();
+export async function getMessage(creds: ImapCredentials, uid: number, mailbox: string) {
+  const client = buildClient(creds);
   await client.connect();
   try {
     const lock = await client.getMailboxLock(mailbox);
@@ -263,8 +264,8 @@ export async function getMessage(uid: number, mailbox: string) {
   }
 }
 
-export async function getAttachment(uid: number, mailbox: string, partId: string) {
-  const client = buildClient();
+export async function getAttachment(creds: ImapCredentials, uid: number, mailbox: string, partId: string) {
+  const client = buildClient(creds);
   await client.connect();
   try {
     const lock = await client.getMailboxLock(mailbox);
@@ -306,8 +307,8 @@ export async function getAttachment(uid: number, mailbox: string, partId: string
   }
 }
 
-export async function moveMessages(uids: number[], mailbox: string, targetMailbox: string) {
-  const client = buildClient();
+export async function moveMessages(creds: ImapCredentials, uids: number[], mailbox: string, targetMailbox: string) {
+  const client = buildClient(creds);
   await client.connect();
   try {
     const lock = await client.getMailboxLock(mailbox);
@@ -321,8 +322,8 @@ export async function moveMessages(uids: number[], mailbox: string, targetMailbo
   }
 }
 
-export async function deleteMessages(uids: number[], mailbox: string) {
-  const client = buildClient();
+export async function deleteMessages(creds: ImapCredentials, uids: number[], mailbox: string) {
+  const client = buildClient(creds);
   await client.connect();
   try {
     const lock = await client.getMailboxLock(mailbox);
@@ -336,8 +337,8 @@ export async function deleteMessages(uids: number[], mailbox: string) {
   }
 }
 
-export async function createFolder(name: string) {
-  const client = buildClient();
+export async function createFolder(creds: ImapCredentials, name: string) {
+  const client = buildClient(creds);
   await client.connect();
   try {
     await client.mailboxCreate(name);
@@ -346,8 +347,8 @@ export async function createFolder(name: string) {
   }
 }
 
-export async function deleteFolder(path: string) {
-  const client = buildClient();
+export async function deleteFolder(creds: ImapCredentials, path: string) {
+  const client = buildClient(creds);
   await client.connect();
   try {
     await client.mailboxDelete(path);
@@ -356,8 +357,8 @@ export async function deleteFolder(path: string) {
   }
 }
 
-export async function emptyFolder(mailbox: string) {
-  const client = buildClient();
+export async function emptyFolder(creds: ImapCredentials, mailbox: string) {
+  const client = buildClient(creds);
   await client.connect();
   try {
     const lock = await client.getMailboxLock(mailbox);
@@ -373,8 +374,8 @@ export async function emptyFolder(mailbox: string) {
   }
 }
 
-export async function markMessages(uids: number[], mailbox: string, read: boolean) {
-  const client = buildClient();
+export async function markMessages(creds: ImapCredentials, uids: number[], mailbox: string, read: boolean) {
+  const client = buildClient(creds);
   await client.connect();
   try {
     const lock = await client.getMailboxLock(mailbox);
@@ -393,8 +394,8 @@ export async function markMessages(uids: number[], mailbox: string, read: boolea
   }
 }
 
-export async function starMessage(uid: number, mailbox: string, starred: boolean) {
-  const client = buildClient();
+export async function starMessage(creds: ImapCredentials, uid: number, mailbox: string, starred: boolean) {
+  const client = buildClient(creds);
   await client.connect();
   try {
     const lock = await client.getMailboxLock(mailbox);
