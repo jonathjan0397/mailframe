@@ -594,14 +594,16 @@ if ($mf_method === 'GET' && $mf_route === 'mailbox') {
                     $preview = mb_substr(trim(strip_tags($decoded)), 0, 120);
                 }
 
+                $ts_val = (int)(strtotime((string)($ov->date ?? '')) ?: time());
                 $messages[] = [
-                    'id'        => mf_encode_id($uid, $folder),
-                    'sender'    => $sender ?: 'Unknown',
-                    'subject'   => mf_decode_header((string)($ov->subject ?? '(No subject)')),
-                    'preview'   => $preview ?: '(No preview)',
-                    'timestamp' => mf_format_ts((int)(strtotime((string)($ov->date ?? '')) ?: time())),
-                    'unread'    => !(bool)($ov->seen ?? false),
-                    'starred'   => (bool)($ov->flagged ?? false),
+                    'id'          => mf_encode_id($uid, $folder),
+                    'sender'      => $sender ?: 'Unknown',
+                    'subject'     => mf_decode_header((string)($ov->subject ?? '(No subject)')),
+                    'preview'     => $preview ?: '(No preview)',
+                    'timestamp'   => mf_format_ts($ts_val),
+                    'timestampMs' => $ts_val * 1000,
+                    'unread'      => !(bool)($ov->seen ?? false),
+                    'starred'     => (bool)($ov->flagged ?? false),
                 ];
             }
         } else {
@@ -629,14 +631,16 @@ if ($mf_method === 'GET' && $mf_route === 'mailbox') {
                     $preview = mb_substr(trim(strip_tags($decoded)), 0, 120);
                 }
 
+                $ts_val = (int)(strtotime((string)($ov->date ?? '')) ?: time());
                 $messages[] = [
-                    'id'        => mf_encode_id($uid, $folder),
-                    'sender'    => $sender ?: 'Unknown',
-                    'subject'   => mf_decode_header((string)($ov->subject ?? '(No subject)')),
-                    'preview'   => $preview ?: '(No preview)',
-                    'timestamp' => mf_format_ts((int)(strtotime((string)($ov->date ?? '')) ?: time())),
-                    'unread'    => !(bool)($ov->seen ?? false),
-                    'starred'   => (bool)($ov->flagged ?? false),
+                    'id'          => mf_encode_id($uid, $folder),
+                    'sender'      => $sender ?: 'Unknown',
+                    'subject'     => mf_decode_header((string)($ov->subject ?? '(No subject)')),
+                    'preview'     => $preview ?: '(No preview)',
+                    'timestamp'   => mf_format_ts($ts_val),
+                    'timestampMs' => $ts_val * 1000,
+                    'unread'      => !(bool)($ov->seen ?? false),
+                    'starred'     => (bool)($ov->flagged ?? false),
                 ];
             }
         }
@@ -722,11 +726,12 @@ if ($mf_method === 'GET' && preg_match('#^messages/([^/]+)$#', $mf_route, $rm)) 
     $date_ts   = (int)(strtotime((string)($ov->date ?? '')) ?: time());
 
     $result = [
-        'id'        => mf_encode_id($dec['uid'], $dec['mailbox']),
-        'sender'    => $sender,
-        'subject'   => $subject,
-        'timestamp' => mf_format_ts($date_ts),
-        'body'      => $paragraphs,
+        'id'          => mf_encode_id($dec['uid'], $dec['mailbox']),
+        'sender'      => $sender,
+        'subject'     => $subject,
+        'timestamp'   => mf_format_ts($date_ts),
+        'timestampMs' => $date_ts * 1000,
+        'body'        => $paragraphs,
     ];
     $inline_parts = array_map(static fn($p) => [
         'cid'      => $p['cid'],
