@@ -1,19 +1,22 @@
 {
   "imap": {
-    "host": "localhost",
+    "host": "mercury.hosted-tech.com",
     "port": 993,
     "secure": true,
     "tls": { "rejectUnauthorized": false }
   },
   "smtp": {
-    "host": "localhost",
-    "port": 587,
-    "secure": false,
+    "host": "mercury.hosted-tech.com",
+    "port": 465,
+    "secure": true,
     "requireTls": false
   },
   "app": {
     "name": "MailFrame",
     "sessionTtlHours": 24,
     "allowedDomains": []
+  },
+  "settings": {
+    "storage": "file"
   }
 }

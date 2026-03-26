@@ -811,4 +811,106 @@ if ($mf_method === 'POST' && $mf_route === 'folders/delete') {
     $ok ? mf_json(['ok' => true]) : mf_err('Could not delete folder.');
 }
 
+// ── User settings (GET + POST /settings) ─────────────────────────────────────
+//
+// Storage is selected by mailframe.config.json → "settings" → "storage":
+//   "file"  (default) — stores userdata/{sha256(email)}.json next to index.php
+//   "mysql"           — stores in a mf_settings table; auto-creates the table
+//
+// MySQL config keys (under "settings"):
+//   host, port, dbname, username, password
+//
+// Example mailframe.config.json excerpt:
+//   "settings": {
+//     "storage": "mysql",
+//     "host": "localhost", "port": 3306,
+//     "dbname": "mydb", "username": "user", "password": "pass"
+//   }
+
+function mf_settings_key(string $email): string {
+    return hash('sha256', strtolower(trim($email)));
+}
+
+function mf_settings_read(string $email): array {
+    global $MF_CFG;
+    $storage = strtolower((string)($MF_CFG['settings']['storage'] ?? 'file'));
+
+    if ($storage === 'mysql') {
+        $pdo = mf_settings_pdo();
+        $st  = $pdo->prepare('SELECT data FROM mf_settings WHERE user_key = ?');
+        $st->execute([mf_settings_key($email)]);
+        $row = $st->fetch(\PDO::FETCH_ASSOC);
+        return $row ? (json_decode($row['data'], true) ?: []) : [];
+    }
+
+    // file (default)
+    $path = mf_settings_file_path($email);
+    if (!file_exists($path)) return [];
+    return json_decode(file_get_contents($path), true) ?: [];
+}
+
+function mf_settings_write(string $email, array $data): void {
+    global $MF_CFG;
+    $storage = strtolower((string)($MF_CFG['settings']['storage'] ?? 'file'));
+    $json    = json_encode($data, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
+
+    if ($storage === 'mysql') {
+        $pdo = mf_settings_pdo();
+        $pdo->prepare(
+            'INSERT INTO mf_settings (user_key, data, updated_at)
+             VALUES (?, ?, NOW())
+             ON DUPLICATE KEY UPDATE data = VALUES(data), updated_at = NOW()'
+        )->execute([mf_settings_key($email), $json]);
+        return;
+    }
+
+    // file (default)
+    $path = mf_settings_file_path($email);
+    $dir  = dirname($path);
+    if (!is_dir($dir)) mkdir($dir, 0750, true);
+    file_put_contents($path, $json, LOCK_EX);
+}
+
+function mf_settings_file_path(string $email): string {
+    return __DIR__ . '/userdata/' . mf_settings_key($email) . '.json';
+}
+
+function mf_settings_pdo(): \PDO {
+    global $MF_CFG;
+    $cfg  = $MF_CFG['settings'] ?? [];
+    $host = (string)($cfg['host']     ?? 'localhost');
+    $port = (int)   ($cfg['port']     ?? 3306);
+    $db   = (string)($cfg['dbname']   ?? '');
+    $user = (string)($cfg['username'] ?? '');
+    $pass = (string)($cfg['password'] ?? '');
+    if (!$db || !$user) mf_err('MySQL settings storage is not configured.', 500);
+
+    $pdo = new \PDO("mysql:host=$host;port=$port;dbname=$db;charset=utf8mb4", $user, $pass, [
+        \PDO::ATTR_ERRMODE => \PDO::ERRMODE_EXCEPTION,
+    ]);
+
+    // Auto-create table on first use
+    $pdo->exec(
+        'CREATE TABLE IF NOT EXISTS mf_settings (
+            user_key   CHAR(64)     NOT NULL PRIMARY KEY,
+            data       MEDIUMTEXT   NOT NULL,
+            updated_at DATETIME     NOT NULL
+         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4'
+    );
+    return $pdo;
+}
+
+if ($mf_method === 'GET' && $mf_route === 'settings') {
+    mf_json(mf_settings_read($mf_creds['user']));
+}
+
+if ($mf_method === 'POST' && $mf_route === 'settings') {
+    if (!is_array($mf_body)) mf_err('Invalid settings payload.');
+    // Merge with existing so partial updates are safe
+    $existing = mf_settings_read($mf_creds['user']);
+    $merged   = array_merge($existing, $mf_body);
+    mf_settings_write($mf_creds['user'], $merged);
+    mf_json(['ok' => true]);
+}
+
 mf_err("Not found: $mf_method /$mf_route", 404);

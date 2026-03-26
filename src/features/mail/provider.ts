@@ -52,4 +52,8 @@ export type MailProvider = {
   createFolder?: (name: string) => Promise<void>;
   /** Delete a folder. */
   deleteFolder?: (folderId: string) => Promise<void>;
+  /** Load persisted user settings from the server. */
+  getSettings?: () => Promise<Record<string, unknown>>;
+  /** Persist user settings to the server (merged server-side). */
+  saveSettings?: (data: Record<string, unknown>) => Promise<void>;
 };

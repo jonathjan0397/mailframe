@@ -108,4 +108,12 @@ export const apiProvider: MailProvider = {
       body: JSON.stringify({ folder: folderId }),
     });
   },
+
+  async getSettings() {
+    return apiFetch<Record<string, unknown>>("/settings");
+  },
+
+  async saveSettings(data: Record<string, unknown>) {
+    await apiFetch("/settings", { method: "POST", body: JSON.stringify(data) });
+  },
 };
