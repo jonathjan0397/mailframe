@@ -107,7 +107,9 @@ function mf_err(string $msg, int $status = 400): never {
 
 function mf_require_auth(): array {
     global $MF_CFG;
-    $ttl = (int)(($MF_CFG['app']['sessionTtlHours'] ?? 24) * 3600);
+    $ttl = isset($_SESSION['mf_ttl'])
+        ? (int)$_SESSION['mf_ttl']
+        : (int)(($MF_CFG['app']['sessionTtlHours'] ?? 24) * 3600);
 
     // Multi-account session structure
     if (!empty($_SESSION['mf_accounts']) && !empty($_SESSION['mf_active'])) {
@@ -452,6 +454,8 @@ if ($mf_method === 'POST' && $mf_route === 'auth/login') {
     $conn = mf_imap_open(['user' => $email, 'pass' => $password]);
     imap_close($conn);
 
+    $rememberMe = !empty($mf_body['rememberMe']);
+
     // Multi-account: append to existing session or start fresh
     if (empty($_SESSION['mf_accounts'])) {
         session_regenerate_id(true);
@@ -460,12 +464,26 @@ if ($mf_method === 'POST' && $mf_route === 'auth/login') {
     $_SESSION['mf_accounts'][$email] = ['pass' => $password, 'created' => time()];
     $_SESSION['mf_active'] = $email;
 
+    if ($rememberMe) {
+        $persistTtl = 30 * 24 * 3600; // 30 days
+        $_SESSION['mf_ttl'] = $persistTtl;
+        // Override the browser-session cookie with an explicit expiry
+        setcookie(session_name(), session_id(), [
+            'expires'  => time() + $persistTtl,
+            'path'     => '/',
+            'httponly' => true,
+            'samesite' => 'Lax',
+        ]);
+    }
+
     $accounts = array_values(array_keys((array)$_SESSION['mf_accounts']));
     mf_json(['ok' => true, 'email' => $email, 'accounts' => $accounts, 'name' => (string)($MF_CFG['app']['name'] ?? 'MailFrame')]);
 }
 
 if ($mf_method === 'GET' && $mf_route === 'auth/me') {
-    $ttl = (int)(($MF_CFG['app']['sessionTtlHours'] ?? 24) * 3600);
+    $ttl = isset($_SESSION['mf_ttl'])
+        ? (int)$_SESSION['mf_ttl']
+        : (int)(($MF_CFG['app']['sessionTtlHours'] ?? 24) * 3600);
     // Multi-account
     if (!empty($_SESSION['mf_accounts']) && !empty($_SESSION['mf_active'])) {
         $email = $_SESSION['mf_active'];

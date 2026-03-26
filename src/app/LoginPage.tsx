@@ -4,7 +4,6 @@ import { themeRegistry } from "../themes/registry";
 
 const THEME_KEY = "mailframe-theme";
 const EMAIL_KEY = "mailframe-last-email";
-const SAVED_CREDS_KEY = "mailframe-saved-creds";
 
 type Props = {
   apiBase: string;
@@ -22,24 +21,14 @@ export function LoginPage({ apiBase, onLogin }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
+  // Remove any previously stored credentials (migration from old localStorage approach)
+  useEffect(() => { localStorage.removeItem("mailframe-saved-creds"); }, []);
+
   // Apply persisted theme immediately on mount
   useEffect(() => {
     const theme = themeRegistry.find((t) => t.id === themeId) ?? themeRegistry[0];
     applyTheme(theme);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Restore saved credentials on mount
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem(SAVED_CREDS_KEY);
-      if (raw) {
-        const creds = JSON.parse(raw) as { email?: string; password?: string };
-        if (creds.email) setEmail(creds.email);
-        if (creds.password) setPassword(creds.password);
-        setRememberMe(true);
-      }
-    } catch { /* ignore */ }
-  }, []);
 
   // Fetch app name from server config endpoint
   useEffect(() => {
@@ -66,16 +55,11 @@ export function LoginPage({ apiBase, onLogin }: Props) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ email: email.trim(), password }),
+        body: JSON.stringify({ email: email.trim(), password, rememberMe }),
       });
       const data = await res.json() as { error?: string; accounts?: string[] };
       if (!res.ok) throw new Error(data.error ?? "Login failed");
       localStorage.setItem(EMAIL_KEY, email.trim());
-      if (rememberMe) {
-        localStorage.setItem(SAVED_CREDS_KEY, JSON.stringify({ email: email.trim(), password }));
-      } else {
-        localStorage.removeItem(SAVED_CREDS_KEY);
-      }
       onLogin(email.trim(), data.accounts ?? [email.trim()]);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Login failed");
@@ -133,7 +117,7 @@ export function LoginPage({ apiBase, onLogin }: Props) {
 
         {rememberMe && (
           <div className="mf-login-warning" role="alert">
-            ⚠ Your password will be saved in this browser. Do not use this on a shared or public computer.
+            ⚠ Your session will stay active for 30 days. Do not use this on a shared or public computer.
           </div>
         )}
 
