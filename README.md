@@ -1,43 +1,40 @@
-# roundcube-modern
+# MailFrame
 
-A modern webmail frontend with a pluggable backend and a custom theming system.
+An extensible IMAP webmail frontend with an easy theming and UI system.
 
 ## Overview
 
-roundcube-modern is a backend-agnostic webmail UI. Any mail backend that implements the provider contract can power the frontend. The theming system supports fully custom visual experiences without touching application logic.
+MailFrame is a backend-agnostic webmail frontend built for extensibility. Connect any IMAP-compatible backend through the provider contract, and customize the look and feel through the theming system without touching application logic.
 
 ## Goals
 
-- A production-quality webmail shell that works with any IMAP/SMTP backend
-- A clean provider contract any backend can implement
-- A modular theming system with drop-in support for custom experiences
+- Production-quality webmail shell that works with any IMAP backend
+- Clean provider contract any backend adapter can implement
+- Easy theming system with drop-in support for custom UI experiences
 - Mobile-aware, accessible, and responsive by default
+- Simple to self-host and extend
 
 ## Architecture
 
 ```
-Frontend (React + TypeScript)
+MailFrame Frontend (React + TypeScript)
     └── Provider Contract (REST API spec)
-            ├── Roundcube Bridge (reference implementation)
-            ├── IMAP/SMTP Bridge (generic implementation)
-            └── Any custom backend
+            ├── IMAP/SMTP Bridge (reference implementation)
+            ├── Roundcube Adapter (optional)
+            └── Any custom backend adapter
 ```
 
 ## Status
 
-Version 1.0 — initial scaffold. See `docs/roadmap.md` for planned milestones.
+Version 1.0 — initial scaffold. See docs/roadmap.md for planned milestones.
 
 ## Getting started
 
-Requirements:
-- Node.js 20+
-- npm 10+
+Requirements: Node.js 20+, npm 10+
 
-```bash
-npm install
-npm run dev
-```
+    npm install
+    npm run dev
 
 ## License
 
-GNU General Public License v3.0. See `LICENSE`.
+GNU General Public License v3.0
