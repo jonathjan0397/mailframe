@@ -116,4 +116,18 @@ export const apiProvider: MailProvider = {
   async saveSettings(data: Record<string, unknown>) {
     await apiFetch("/settings", { method: "POST", body: JSON.stringify(data) });
   },
+
+  async switchAccount(email: string) {
+    return apiFetch<{ email: string; accounts: string[] }>("/auth/switch", {
+      method: "POST",
+      body: JSON.stringify({ email }),
+    });
+  },
+
+  async logoutAccount(email: string) {
+    return apiFetch<{ accounts: string[]; email?: string }>("/auth/logout-account", {
+      method: "POST",
+      body: JSON.stringify({ email }),
+    });
+  },
 };

@@ -1,6 +1,6 @@
 {
   "name": "mailframe",
-  "version": "1.12.0",
+  "version": "1.15.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -24,6 +24,7 @@
     "@types/react": "^18.3.1",
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.1",
+    "basic-ftp": "^5.2.0",
     "jsdom": "^29.0.1",
     "typescript": "^5.5.3",
     "vite": "^5.4.1",

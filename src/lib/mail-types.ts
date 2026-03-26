@@ -36,6 +36,8 @@ export type MailMessageDetail = {
   bodyHtml?: string;
   /** Attachment metadata list. */
   attachments?: MailAttachment[];
+  /** Inline image parts (multipart/related CID references). */
+  inlineParts?: Array<{ cid: string; partId: string; mimeType: string }>;
 };
 
 export type MailboxSnapshot = {

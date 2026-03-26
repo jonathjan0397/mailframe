@@ -107,15 +107,35 @@ function mf_err(string $msg, int $status = 400): never {
 
 function mf_require_auth(): array {
     global $MF_CFG;
-    if (empty($_SESSION['mf_email']) || empty($_SESSION['mf_pass'])) {
-        mf_err('Not authenticated.', 401);
-    }
     $ttl = (int)(($MF_CFG['app']['sessionTtlHours'] ?? 24) * 3600);
-    if ((time() - (int)($_SESSION['mf_created'] ?? 0)) > $ttl) {
-        session_destroy();
-        mf_err('Session expired.', 401);
+
+    // Multi-account session structure
+    if (!empty($_SESSION['mf_accounts']) && !empty($_SESSION['mf_active'])) {
+        $email = $_SESSION['mf_active'];
+        $acct  = $_SESSION['mf_accounts'][$email] ?? null;
+        if (!$acct) mf_err('Not authenticated.', 401);
+        if ((time() - (int)($acct['created'] ?? 0)) > $ttl) {
+            unset($_SESSION['mf_accounts'][$email]);
+            if (empty($_SESSION['mf_accounts'])) {
+                session_destroy();
+            } else {
+                $_SESSION['mf_active'] = (string)array_key_first($_SESSION['mf_accounts']);
+            }
+            mf_err('Session expired.', 401);
+        }
+        return ['user' => $email, 'pass' => $acct['pass']];
     }
-    return ['user' => $_SESSION['mf_email'], 'pass' => $_SESSION['mf_pass']];
+
+    // Legacy single-account fallback
+    if (!empty($_SESSION['mf_email']) && !empty($_SESSION['mf_pass'])) {
+        if ((time() - (int)($_SESSION['mf_created'] ?? 0)) > $ttl) {
+            session_destroy();
+            mf_err('Session expired.', 401);
+        }
+        return ['user' => $_SESSION['mf_email'], 'pass' => $_SESSION['mf_pass']];
+    }
+
+    mf_err('Not authenticated.', 401);
 }
 
 // ── Message ID encode / decode ────────────────────────────────────────────────
@@ -268,6 +288,18 @@ function mf_walk_struct(object $s, string $sec, array &$out): void {
         $out['text'][] = ['section' => $section, 'encoding' => $enc, 'charset' => $charset];
     } elseif ($type === 0 && $subtype === 'html' && $disp !== 'attachment' && !$filename) {
         $out['html'][] = ['section' => $section, 'encoding' => $enc, 'charset' => $charset];
+    } elseif ($type === 5 && !empty($s->id) && $disp !== 'attachment') {
+        // Inline image with a Content-ID (used in multipart/related HTML emails)
+        $cid = trim((string)$s->id, '<> ');
+        if ($cid) {
+            $mime_prefix = 'image';
+            $out['inline'][] = [
+                'partId'   => $section,
+                'cid'      => $cid,
+                'mimeType' => "$mime_prefix/$subtype",
+                'encoding' => $enc,
+            ];
+        }
     } elseif ($filename) {
         $mime_prefix = match($type) {
             0 => 'text', 1 => 'multipart', 2 => 'message',
@@ -420,24 +452,64 @@ if ($mf_method === 'POST' && $mf_route === 'auth/login') {
     $conn = mf_imap_open(['user' => $email, 'pass' => $password]);
     imap_close($conn);
 
-    session_regenerate_id(true);
-    $_SESSION['mf_email']   = $email;
-    $_SESSION['mf_pass']    = $password;
-    $_SESSION['mf_created'] = time();
+    // Multi-account: append to existing session or start fresh
+    if (empty($_SESSION['mf_accounts'])) {
+        session_regenerate_id(true);
+        $_SESSION['mf_accounts'] = [];
+    }
+    $_SESSION['mf_accounts'][$email] = ['pass' => $password, 'created' => time()];
+    $_SESSION['mf_active'] = $email;
 
-    mf_json(['ok' => true, 'name' => (string)($MF_CFG['app']['name'] ?? 'MailFrame')]);
+    $accounts = array_values(array_keys((array)$_SESSION['mf_accounts']));
+    mf_json(['ok' => true, 'email' => $email, 'accounts' => $accounts, 'name' => (string)($MF_CFG['app']['name'] ?? 'MailFrame')]);
 }
 
 if ($mf_method === 'GET' && $mf_route === 'auth/me') {
-    if (empty($_SESSION['mf_email'])) mf_json(['ok' => false], 401);
     $ttl = (int)(($MF_CFG['app']['sessionTtlHours'] ?? 24) * 3600);
+    // Multi-account
+    if (!empty($_SESSION['mf_accounts']) && !empty($_SESSION['mf_active'])) {
+        $email = $_SESSION['mf_active'];
+        $acct  = $_SESSION['mf_accounts'][$email] ?? null;
+        if (!$acct || (time() - (int)($acct['created'] ?? 0)) > $ttl) {
+            session_destroy(); mf_json(['ok' => false], 401);
+        }
+        $accounts = array_values(array_keys((array)$_SESSION['mf_accounts']));
+        mf_json(['ok' => true, 'email' => $email, 'accounts' => $accounts, 'name' => (string)($MF_CFG['app']['name'] ?? 'MailFrame')]);
+    }
+    // Legacy fallback
+    if (empty($_SESSION['mf_email'])) mf_json(['ok' => false], 401);
     if ((time() - (int)($_SESSION['mf_created'] ?? 0)) > $ttl) { session_destroy(); mf_json(['ok' => false], 401); }
-    mf_json(['ok' => true, 'email' => $_SESSION['mf_email'], 'name' => (string)($MF_CFG['app']['name'] ?? 'MailFrame')]);
+    mf_json(['ok' => true, 'email' => $_SESSION['mf_email'], 'accounts' => [$_SESSION['mf_email']], 'name' => (string)($MF_CFG['app']['name'] ?? 'MailFrame')]);
 }
 
 if ($mf_method === 'POST' && $mf_route === 'auth/logout') {
     session_destroy();
     mf_json(['ok' => true]);
+}
+
+if ($mf_method === 'POST' && $mf_route === 'auth/switch') {
+    $email = trim((string)($mf_body['email'] ?? ''));
+    if (!$email) mf_err('email required.');
+    if (empty($_SESSION['mf_accounts'][$email])) mf_err('Account not in session.', 404);
+    $_SESSION['mf_active'] = $email;
+    $accounts = array_values(array_keys((array)$_SESSION['mf_accounts']));
+    mf_json(['ok' => true, 'email' => $email, 'accounts' => $accounts]);
+}
+
+if ($mf_method === 'POST' && $mf_route === 'auth/logout-account') {
+    $email = trim((string)($mf_body['email'] ?? ''));
+    if (!$email) mf_err('email required.');
+    unset($_SESSION['mf_accounts'][$email]);
+    if (empty($_SESSION['mf_accounts'])) {
+        session_destroy();
+        mf_json(['ok' => true, 'accounts' => []]);
+    }
+    // If removed account was the active one, switch to another
+    if (($_SESSION['mf_active'] ?? '') === $email) {
+        $_SESSION['mf_active'] = (string)array_key_first($_SESSION['mf_accounts']);
+    }
+    $accounts = array_values(array_keys((array)$_SESSION['mf_accounts']));
+    mf_json(['ok' => true, 'email' => $_SESSION['mf_active'], 'accounts' => $accounts]);
 }
 
 // ── Protected (require auth) ──────────────────────────────────────────────────
@@ -602,7 +674,7 @@ if ($mf_method === 'GET' && preg_match('#^messages/([^/]+)$#', $mf_route, $rm)) 
     imap_setflag_full($conn, (string)$dec['uid'], '\\Seen', ST_UID);
 
     // Walk MIME tree
-    $parts = ['text' => [], 'html' => [], 'attachments' => []];
+    $parts = ['text' => [], 'html' => [], 'attachments' => [], 'inline' => []];
     mf_walk_struct($struct, '', $parts);
 
     $body_text = '';
@@ -656,9 +728,16 @@ if ($mf_method === 'GET' && preg_match('#^messages/([^/]+)$#', $mf_route, $rm)) 
         'timestamp' => mf_format_ts($date_ts),
         'body'      => $paragraphs,
     ];
-    if ($to_header)  $result['to']       = [$to_header];
-    if ($body_html)  $result['bodyHtml'] = $body_html;
-    if ($atts)       $result['attachments'] = $atts;
+    $inline_parts = array_map(static fn($p) => [
+        'cid'      => $p['cid'],
+        'partId'   => $p['partId'],
+        'mimeType' => $p['mimeType'],
+    ], $parts['inline']);
+
+    if ($to_header)    $result['to']          = [$to_header];
+    if ($body_html)    $result['bodyHtml']    = $body_html;
+    if ($atts)         $result['attachments'] = $atts;
+    if ($inline_parts) $result['inlineParts'] = $inline_parts;
 
     mf_json($result);
 }

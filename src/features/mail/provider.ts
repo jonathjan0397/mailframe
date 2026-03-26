@@ -56,4 +56,8 @@ export type MailProvider = {
   getSettings?: () => Promise<Record<string, unknown>>;
   /** Persist user settings to the server (merged server-side). */
   saveSettings?: (data: Record<string, unknown>) => Promise<void>;
+  /** Switch active account (multi-account sessions). */
+  switchAccount?: (email: string) => Promise<{ email: string; accounts: string[] }>;
+  /** Remove one account from the session; returns remaining accounts. */
+  logoutAccount?: (email: string) => Promise<{ accounts: string[]; email?: string }>;
 };

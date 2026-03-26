@@ -15,6 +15,20 @@ type Props = {
 const DRAFT_KEY = "mailframe-draft";
 const SIGNATURE_KEY = "mailframe-signature";
 const CONTACTS_KEY = "mailframe-contacts";
+const TEMPLATES_KEY = "mailframe-templates";
+
+type Template = { id: string; name: string; subject: string; bodyHtml: string };
+
+function getTemplates(): Template[] {
+  try { return JSON.parse(localStorage.getItem(TEMPLATES_KEY) ?? "[]") as Template[]; }
+  catch { return []; }
+}
+
+function persistTemplate(tpl: Template): void {
+  const list = getTemplates().filter((t) => t.id !== tpl.id);
+  list.unshift(tpl);
+  try { localStorage.setItem(TEMPLATES_KEY, JSON.stringify(list)); } catch { /* ignore */ }
+}
 
 type DraftData = {
   to: string; cc: string; bcc: string; subject: string;
@@ -126,6 +140,7 @@ export function ComposeModal({
   const [isDragOver, setIsDragOver] = useState(false);
   const [showSchedule, setShowSchedule] = useState(false);
   const [scheduleTime, setScheduleTime] = useState("");
+  const [templates, setTemplates] = useState<Template[]>(() => getTemplates());
 
   const editorRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -218,6 +233,28 @@ export function ComposeModal({
     setIsDragOver(false);
     const files = Array.from(e.dataTransfer.files);
     if (files.length) setAttachments((prev) => [...prev, ...files]);
+  }
+
+  function handleApplyTemplate(tplId: string) {
+    const tpl = templates.find((t) => t.id === tplId);
+    if (!tpl || !editorRef.current) return;
+    if (tpl.subject) setSubject(tpl.subject);
+    editorRef.current.innerHTML = DOMPurify.sanitize(tpl.bodyHtml || "<p><br></p>");
+    saveDraft();
+  }
+
+  function handleSaveTemplate() {
+    const name = window.prompt("Save template as:");
+    if (!name?.trim()) return;
+    const bodyHtml = editorRef.current?.innerHTML ?? "";
+    const tpl: Template = {
+      id: Date.now().toString(36),
+      name: name.trim(),
+      subject: subject.trim(),
+      bodyHtml,
+    };
+    persistTemplate(tpl);
+    setTemplates(getTemplates());
   }
 
   async function handleSendLater() {
@@ -373,6 +410,28 @@ export function ComposeModal({
               placeholder="Subject"
             />
           </div>
+
+          {templates.length > 0 && (
+            <div className="mf-compose-field mf-compose-template-row">
+              <label htmlFor="mf-compose-template">Template</label>
+              <select
+                id="mf-compose-template"
+                className="mf-compose-template-select"
+                defaultValue=""
+                onChange={(e) => {
+                  if (e.target.value) {
+                    handleApplyTemplate(e.target.value);
+                    e.target.value = "";
+                  }
+                }}
+              >
+                <option value="" disabled>Apply template…</option>
+                {templates.map((t) => (
+                  <option key={t.id} value={t.id}>{t.name}</option>
+                ))}
+              </select>
+            </div>
+          )}
         </div>
 
         {/* Rich-text toolbar */}
@@ -522,6 +581,15 @@ export function ComposeModal({
             title="Attach files"
           >
             📎
+          </button>
+          <button
+            className="mf-compose-template-btn"
+            type="button"
+            onClick={handleSaveTemplate}
+            aria-label="Save as template"
+            title="Save as template"
+          >
+            💾
           </button>
           {onSendLater && (
             <button

@@ -1756,6 +1756,22 @@ kbd {
   color: #fff;
 }
 
+.mf-mark-all-read {
+  padding: 3px 7px;
+  border: 1px solid var(--mf-color-border, #e0e0e0);
+  border-radius: var(--mf-radius-sm, 4px);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--mf-color-accent, #1a73e8);
+  background: none;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.mf-mark-all-read:hover {
+  background: var(--mf-color-selected-bg, #e8f0fe);
+}
+
 /* ── Thread count badge (on message subject in thread view) ───── */
 .mf-thread-count {
   display: inline-flex;
@@ -1927,3 +1943,131 @@ kbd {
 .mf-snooze-option:hover {
   background: var(--mf-color-hover);
 }
+
+/* ── Account switcher ─────────────────────────────────────────── */
+.mf-account-list {
+  padding: 4px 8px 8px;
+  border-bottom: 1px solid var(--mf-color-border, #e0e0e0);
+  margin-bottom: 4px;
+}
+
+.mf-account-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  border-radius: var(--mf-radius-sm, 4px);
+  margin-bottom: 2px;
+}
+
+.mf-account-item.active {
+  background: var(--mf-color-selected-bg, #e8f0fe);
+}
+
+.mf-account-switch {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 6px;
+  border-radius: var(--mf-radius-sm, 4px);
+  background: none;
+  border: none;
+  cursor: pointer;
+  min-width: 0;
+  text-align: left;
+}
+
+.mf-account-switch:hover { background: var(--mf-color-hover, rgba(0,0,0,0.04)); }
+
+.mf-account-avatar {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--mf-color-accent, #1a73e8);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.mf-account-email {
+  font-size: 12px;
+  color: var(--mf-color-text, #202124);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mf-account-item.active .mf-account-email {
+  font-weight: 600;
+}
+
+.mf-account-remove {
+  flex-shrink: 0;
+  padding: 4px 6px;
+  border-radius: var(--mf-radius-sm, 4px);
+  font-size: 11px;
+  color: var(--mf-color-text-muted, #888);
+  background: none;
+  border: none;
+  cursor: pointer;
+  line-height: 1;
+  opacity: 0;
+  transition: opacity 0.1s;
+}
+
+.mf-account-item:hover .mf-account-remove { opacity: 1; }
+.mf-account-remove:hover { color: var(--mf-color-danger, #d93025); background: var(--mf-color-hover); }
+
+.mf-account-add {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 5px 6px;
+  margin-top: 2px;
+  border-radius: var(--mf-radius-sm, 4px);
+  font-size: 12px;
+  color: var(--mf-color-accent, #1a73e8);
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+.mf-account-add:hover { background: var(--mf-color-hover, rgba(0,0,0,0.04)); }
+
+/* ── Email templates ──────────────────────────────────────────── */
+.mf-compose-template-row {
+  background: var(--mf-color-bg, #f8f9fa);
+}
+
+.mf-compose-template-select {
+  flex: 1;
+  padding: 6px 8px;
+  border: 1.5px solid var(--mf-color-border, #e0e0e0);
+  border-radius: var(--mf-radius-sm, 4px);
+  font-size: var(--mf-font-size-sm, 13px);
+  font-family: inherit;
+  background: var(--mf-color-surface, #fff);
+  color: var(--mf-color-text, #202124);
+  outline: none;
+  cursor: pointer;
+}
+
+.mf-compose-template-select:focus {
+  border-color: var(--mf-color-accent, #1a73e8);
+}
+
+.mf-compose-template-btn {
+  padding: 6px 8px;
+  background: none;
+  border: 1px solid var(--mf-color-border, #e0e0e0);
+  border-radius: var(--mf-radius-sm, 4px);
+  cursor: pointer;
+  font-size: 14px;
+  color: var(--mf-color-text-muted, #888);
+}
+
+.mf-compose-template-btn:hover { background: var(--mf-color-hover, rgba(0,0,0,0.04)); }
