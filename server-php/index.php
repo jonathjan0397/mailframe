@@ -543,13 +543,19 @@ if ($mf_method === 'GET' && $mf_route === 'mailbox') {
 
     $server = mf_imap_server();
 
-    // Open root to enumerate folders
-    $list_conn = mf_imap_open($mf_creds);
-    $raw_boxes = imap_list($list_conn, $server, '*') ?: [];
+    // Single connection for both folder listing and message fetching.
+    // imap_list() and imap_status() use LIST/STATUS commands which do not
+    // change the selected mailbox, so we can reuse the same handle.
+    $conn  = mf_imap_open($mf_creds, $folder);
+    $check = imap_check($conn);
+    $total = $check ? (int)$check->Nmsgs : 0;
+
+    // Enumerate folders on the same connection
+    $raw_boxes = imap_list($conn, $server, '*') ?: [];
     $folders   = [];
     foreach ($raw_boxes as $box) {
         $name   = str_replace($server, '', $box);
-        $status = imap_status($list_conn, $box, SA_MESSAGES | SA_UNSEEN);
+        $status = imap_status($conn, $box, SA_MESSAGES | SA_UNSEEN);
         $folders[] = [
             'id'          => $name,
             'label'       => mf_folder_label($name),
@@ -557,12 +563,6 @@ if ($mf_method === 'GET' && $mf_route === 'mailbox') {
             'unreadCount' => $status ? (int)$status->unseen   : 0,
         ];
     }
-    imap_close($list_conn);
-
-    // Open the target folder for messages
-    $msg_conn = mf_imap_open($mf_creds, $folder);
-    $check    = imap_check($msg_conn);
-    $total    = $check ? (int)$check->Nmsgs : 0;
 
     $messages = [];
     $has_next = false;
@@ -588,73 +588,55 @@ if ($mf_method === 'GET' && $mf_route === 'mailbox') {
             $q = trim($q);
             if ($q && $search_str === 'ALL') $search_str = 'TEXT "' . addslashes($q) . '"';
 
-            $uids = imap_search($msg_conn, $search_str, SE_UID) ?: [];
+            $uids = imap_search($conn, $search_str, SE_UID) ?: [];
             rsort($uids); // newest first
             $has_next = count($uids) > ($page - 1) * $page_size + $page_size;
             $uids = array_slice($uids, ($page - 1) * $page_size, $page_size);
 
-            foreach ($uids as $uid) {
-                $msgno = imap_msgno($msg_conn, $uid);
-                if (!$msgno) continue;
-                $ov_arr = imap_fetch_overview($msg_conn, (string)$uid, FT_UID);
-                if (!$ov_arr) continue;
-                $ov = $ov_arr[0];
+            if ($uids) {
+                // One batch FETCH for all UIDs instead of N individual calls
+                $overviews = imap_fetch_overview($conn, implode(',', $uids), FT_UID) ?: [];
+                $ov_map = [];
+                foreach ($overviews as $ov) { $ov_map[(int)$ov->uid] = $ov; }
 
-                $sender = mf_decode_header((string)($ov->from ?? ''));
-                if (preg_match('/^(.+?)\s*</', $sender, $sm)) $sender = trim($sm[1], '" ');
-
-                $preview = '';
-                $raw_body = @imap_fetchbody($msg_conn, $msgno, '1');
-                if ($raw_body) {
-                    $struct = imap_fetchstructure($msg_conn, $msgno);
-                    $enc = isset($struct->parts[0]) ? (int)($struct->parts[0]->encoding ?? 0) : (int)($struct->encoding ?? 0);
-                    $decoded = mf_decode_part($raw_body, $enc);
-                    $preview = mb_substr(trim(strip_tags($decoded)), 0, 120);
+                foreach ($uids as $uid) {
+                    $ov = $ov_map[(int)$uid] ?? null;
+                    if (!$ov) continue;
+                    $sender = mf_decode_header((string)($ov->from ?? ''));
+                    if (preg_match('/^(.+?)\s*</', $sender, $sm)) $sender = trim($sm[1], '" ');
+                    $ts_val = (int)(strtotime((string)($ov->date ?? '')) ?: time());
+                    $messages[] = [
+                        'id'          => mf_encode_id((int)$uid, $folder),
+                        'sender'      => $sender ?: 'Unknown',
+                        'subject'     => mf_decode_header((string)($ov->subject ?? '(No subject)')),
+                        'preview'     => '',
+                        'timestamp'   => mf_format_ts($ts_val),
+                        'timestampMs' => $ts_val * 1000,
+                        'unread'      => !(bool)($ov->seen ?? false),
+                        'starred'     => (bool)($ov->flagged ?? false),
+                    ];
                 }
-
-                $ts_val = (int)(strtotime((string)($ov->date ?? '')) ?: time());
-                $messages[] = [
-                    'id'          => mf_encode_id($uid, $folder),
-                    'sender'      => $sender ?: 'Unknown',
-                    'subject'     => mf_decode_header((string)($ov->subject ?? '(No subject)')),
-                    'preview'     => $preview ?: '(No preview)',
-                    'timestamp'   => mf_format_ts($ts_val),
-                    'timestampMs' => $ts_val * 1000,
-                    'unread'      => !(bool)($ov->seen ?? false),
-                    'starred'     => (bool)($ov->flagged ?? false),
-                ];
             }
         } else {
             // Sequence-number range, newest-first pagination
             $start    = max(1, $total - $page * $page_size + 1);
             $end      = max(1, $total - ($page - 1) * $page_size);
             $has_next = $start > 1;
-            $seqs     = range($end, $start); // newest first
 
-            foreach ($seqs as $seq) {
-                $ov_arr = imap_fetch_overview($msg_conn, (string)$seq);
-                if (!$ov_arr) continue;
-                $ov  = $ov_arr[0];
-                $uid = (int)($ov->uid ?? $seq);
+            // One batch FETCH for the entire page range instead of N individual calls
+            $overviews = imap_fetch_overview($conn, "$start:$end") ?: [];
+            $overviews = array_reverse($overviews); // newest first
 
+            foreach ($overviews as $ov) {
+                $uid = (int)($ov->uid ?? $ov->msgno ?? 0);
                 $sender = mf_decode_header((string)($ov->from ?? ''));
                 if (preg_match('/^(.+?)\s*</', $sender, $sm)) $sender = trim($sm[1], '" ');
-
-                $preview = '';
-                $raw_body = @imap_fetchbody($msg_conn, $seq, '1');
-                if ($raw_body) {
-                    $struct = imap_fetchstructure($msg_conn, $seq);
-                    $enc = isset($struct->parts[0]) ? (int)($struct->parts[0]->encoding ?? 0) : (int)($struct->encoding ?? 0);
-                    $decoded = mf_decode_part($raw_body, $enc);
-                    $preview = mb_substr(trim(strip_tags($decoded)), 0, 120);
-                }
-
                 $ts_val = (int)(strtotime((string)($ov->date ?? '')) ?: time());
                 $messages[] = [
                     'id'          => mf_encode_id($uid, $folder),
                     'sender'      => $sender ?: 'Unknown',
                     'subject'     => mf_decode_header((string)($ov->subject ?? '(No subject)')),
-                    'preview'     => $preview ?: '(No preview)',
+                    'preview'     => '',
                     'timestamp'   => mf_format_ts($ts_val),
                     'timestampMs' => $ts_val * 1000,
                     'unread'      => !(bool)($ov->seen ?? false),
@@ -663,7 +645,7 @@ if ($mf_method === 'GET' && $mf_route === 'mailbox') {
             }
         }
     }
-    imap_close($msg_conn);
+    imap_close($conn);
 
     mf_json([
         'folders'  => $folders,
