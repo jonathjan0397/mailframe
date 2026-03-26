@@ -1,0 +1,240 @@
+import { ImapFlow } from "imapflow";
+import { encodeMessageId } from "./encode.js";
+
+const PAGE_SIZE = 25;
+
+function buildClient(): ImapFlow {
+  return new ImapFlow({
+    host: process.env.IMAP_HOST ?? "",
+    port: parseInt(process.env.IMAP_PORT ?? "993", 10),
+    secure: process.env.IMAP_SECURE !== "false",
+    auth: {
+      user: process.env.IMAP_USER ?? "",
+      pass: process.env.IMAP_PASS ?? "",
+    },
+    logger: false,
+  });
+}
+
+function formatTimestamp(date: Date | undefined): string {
+  if (!date) return "";
+  const now = new Date();
+  const sameDay = date.toDateString() === now.toDateString();
+  const sameYear = date.getFullYear() === now.getFullYear();
+  if (sameDay) return date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  if (sameYear) return date.toLocaleDateString([], { month: "short", day: "numeric" });
+  return date.toLocaleDateString([], { month: "short", day: "numeric", year: "numeric" });
+}
+
+function formatSender(address: { name?: string; address?: string } | undefined): string {
+  if (!address) return "Unknown";
+  if (address.name) return address.name;
+  return address.address ?? "Unknown";
+}
+
+function folderLabel(name: string): string {
+  const map: Record<string, string> = {
+    INBOX: "Inbox", Sent: "Sent", "Sent Items": "Sent", Drafts: "Drafts",
+    Trash: "Trash", Junk: "Spam", Spam: "Spam", Archive: "Archive",
+  };
+  if (map[name]) return map[name];
+  const parts = name.split(/[./]/);
+  return parts[parts.length - 1]
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+export async function getFolders() {
+  const client = buildClient();
+  await client.connect();
+  try {
+    const list = await client.list();
+    const folders = await Promise.all(
+      list
+        .filter((f) => !f.flags.has("\\Noselect"))
+        .map(async (f) => {
+          const status = await client.status(f.path, { messages: true, unseen: true });
+          return {
+            id: f.path,
+            label: folderLabel(f.path),
+            count: status.messages ?? 0,
+            unreadCount: status.unseen ?? 0,
+          };
+        })
+    );
+    return folders;
+  } finally {
+    await client.logout();
+  }
+}
+
+export async function getMailbox(mailbox: string, page: number, query: string) {
+  const client = buildClient();
+  await client.connect();
+  try {
+    const lock = await client.getMailboxLock(mailbox);
+    try {
+      const status = await client.status(mailbox, { messages: true, unseen: true });
+      const total = status.messages ?? 0;
+
+      if (total === 0) {
+        return { messages: [], total: 0, hasNextPage: false };
+      }
+
+      // Fetch newest first — calculate UID range for page
+      const start = Math.max(1, total - (page * PAGE_SIZE) + 1);
+      const end = Math.max(1, total - ((page - 1) * PAGE_SIZE));
+      const range = `${start}:${end}`;
+
+      const messages: Array<{
+        id: string; sender: string; subject: string;
+        preview: string; timestamp: string; unread: boolean; starred: boolean;
+      }> = [];
+
+      for await (const msg of client.fetch(range, {
+        uid: true, envelope: true, flags: true, bodyStructure: true,
+      })) {
+        const sender = formatSender(msg.envelope?.from?.[0]);
+        const subject = msg.envelope?.subject ?? "(No subject)";
+        const timestamp = formatTimestamp(msg.envelope?.date);
+        const unread = !msg.flags?.has("\\Seen");
+        const starred = msg.flags?.has("\\Flagged") ?? false;
+
+        if (query) {
+          const q = query.toLowerCase();
+          if (
+            !sender.toLowerCase().includes(q) &&
+            !subject.toLowerCase().includes(q)
+          ) continue;
+        }
+
+        messages.push({
+          id: encodeMessageId(msg.uid, mailbox),
+          sender, subject,
+          preview: "Open to read this message.",
+          timestamp, unread, starred,
+        });
+      }
+
+      messages.reverse();
+      const hasNextPage = start > 1;
+      return { messages, total, hasNextPage };
+    } finally {
+      lock.release();
+    }
+  } finally {
+    await client.logout();
+  }
+}
+
+export async function getMessage(uid: number, mailbox: string) {
+  const client = buildClient();
+  await client.connect();
+  try {
+    const lock = await client.getMailboxLock(mailbox);
+    try {
+      const msg = await client.fetchOne(`${uid}`, {
+        uid: true, envelope: true, flags: true, bodyParts: ["1", "1.1", "TEXT"],
+      }, { uid: true });
+
+      if (!msg) throw new Error("Message not found.");
+
+      // Mark as read
+      await client.messageFlagsAdd(`${uid}`, ["\\Seen"], { uid: true });
+
+      const sender = formatSender(msg.envelope?.from?.[0]);
+      const subject = msg.envelope?.subject ?? "(No subject)";
+      const timestamp = formatTimestamp(msg.envelope?.date);
+
+      // Extract body text
+      let bodyText = "";
+      for (const [, content] of msg.bodyParts ?? new Map()) {
+        const text = content.toString("utf8");
+        if (text.trim()) { bodyText = text; break; }
+      }
+
+      const paragraphs = bodyText.trim()
+        ? bodyText.split(/\n\s*\n/).map((p) => p.replace(/\s+/g, " ").trim()).filter(Boolean)
+        : ["Message body could not be extracted."];
+
+      return {
+        id: encodeMessageId(uid, mailbox),
+        sender, subject, timestamp,
+        body: paragraphs,
+      };
+    } finally {
+      lock.release();
+    }
+  } finally {
+    await client.logout();
+  }
+}
+
+export async function moveMessages(uids: number[], mailbox: string, targetMailbox: string) {
+  const client = buildClient();
+  await client.connect();
+  try {
+    const lock = await client.getMailboxLock(mailbox);
+    try {
+      await client.messageMove(uids.map(String).join(","), targetMailbox, { uid: true });
+    } finally {
+      lock.release();
+    }
+  } finally {
+    await client.logout();
+  }
+}
+
+export async function deleteMessages(uids: number[], mailbox: string) {
+  const client = buildClient();
+  await client.connect();
+  try {
+    const lock = await client.getMailboxLock(mailbox);
+    try {
+      await client.messageDelete(uids.map(String).join(","), { uid: true });
+    } finally {
+      lock.release();
+    }
+  } finally {
+    await client.logout();
+  }
+}
+
+export async function markMessages(uids: number[], mailbox: string, read: boolean) {
+  const client = buildClient();
+  await client.connect();
+  try {
+    const lock = await client.getMailboxLock(mailbox);
+    try {
+      const uidSet = uids.map(String).join(",");
+      if (read) {
+        await client.messageFlagsAdd(uidSet, ["\\Seen"], { uid: true });
+      } else {
+        await client.messageFlagsRemove(uidSet, ["\\Seen"], { uid: true });
+      }
+    } finally {
+      lock.release();
+    }
+  } finally {
+    await client.logout();
+  }
+}
+
+export async function starMessage(uid: number, mailbox: string, starred: boolean) {
+  const client = buildClient();
+  await client.connect();
+  try {
+    const lock = await client.getMailboxLock(mailbox);
+    try {
+      if (starred) {
+        await client.messageFlagsAdd(`${uid}`, ["\\Flagged"], { uid: true });
+      } else {
+        await client.messageFlagsRemove(`${uid}`, ["\\Flagged"], { uid: true });
+      }
+    } finally {
+      lock.release();
+    }
+  } finally {
+    await client.logout();
+  }
+}
