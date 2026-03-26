@@ -50,6 +50,24 @@ export function SettingsPanel({
           <section className="mf-settings-section">
             <h2 className="mf-settings-section-title">Appearance</h2>
             <div className="mf-theme-cards">
+              {/* System (Auto) — follows OS light/dark preference */}
+              <button
+                className={`mf-theme-card${"system" === activeThemeId ? " active" : ""}`}
+                onClick={() => onThemeChange("system")}
+                aria-pressed={"system" === activeThemeId}
+              >
+                <span
+                  className="mf-theme-card-swatch mf-theme-card-swatch--system"
+                  aria-hidden="true"
+                />
+                <div className="mf-theme-card-info">
+                  <span className="mf-theme-card-name">System (Auto)</span>
+                  <span className="mf-theme-card-desc">Follows your OS light / dark setting.</span>
+                </div>
+                {"system" === activeThemeId && (
+                  <span className="mf-theme-card-check" aria-hidden="true">✓</span>
+                )}
+              </button>
               {themes.map((t) => (
                 <button
                   key={t.id}

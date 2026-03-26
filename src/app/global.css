@@ -1059,6 +1059,11 @@ input {
   flex-shrink: 0;
 }
 
+.mf-theme-card-swatch--system {
+  background: linear-gradient(135deg, #f1f3f4 50%, #1c1e21 50%);
+  border: 1px solid #ccc;
+}
+
 .mf-theme-card-info {
   flex: 1;
   min-width: 0;

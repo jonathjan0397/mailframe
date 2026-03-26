@@ -283,9 +283,20 @@ export function App() {
 
   // Apply theme + persist selection
   useEffect(() => {
+    localStorage.setItem("mailframe-theme", activeThemeId);
+    if (activeThemeId === "system") {
+      const mq = window.matchMedia("(prefers-color-scheme: dark)");
+      const apply = () => {
+        const dark = themeRegistry.find((t) => t.id === "eclipse") ?? themeRegistry[0];
+        const light = themeRegistry.find((t) => t.id === "lumen") ?? themeRegistry[0];
+        applyTheme(mq.matches ? dark : light);
+      };
+      apply();
+      mq.addEventListener("change", apply);
+      return () => mq.removeEventListener("change", apply);
+    }
     const theme = themeRegistry.find((t) => t.id === activeThemeId) ?? themeRegistry[0];
     applyTheme(theme);
-    localStorage.setItem("mailframe-theme", activeThemeId);
   }, [activeThemeId]);
 
   // Check auth when switching to bridge provider
