@@ -68,29 +68,17 @@ Switch to **Settings → Connection → Demo** if the API provider was previousl
 
 **Requirements:** PHP 7.4+ with the `php-imap` extension (standard on most shared hosts), a MySQL database, and an FTP client or cPanel File Manager.
 
-### Step 1 — Build the frontend (one time, on your own computer)
+### Step 1 — Download the release ZIP
 
-You need Node.js installed locally to build the frontend once. You will not need it again after this step.
+Go to the [Releases page](https://github.com/jonathjan0397/mailframe/releases) and download the latest `mailframe-x.x.x.zip`. Extract it on your computer — you will find three things inside:
 
-```bash
-git clone https://github.com/jonathjan0397/mailframe.git
-cd mailframe
-npm install
-```
+| Extracted path | What it is |
+|---|---|
+| `dist/` | Pre-built frontend (HTML, JS, CSS) |
+| `server-php/` | PHP bridge API files |
+| `htaccess` | Apache routing rules |
 
-Create a file called `.env.local` in the project root containing your site URL:
-
-```
-VITE_API_BASE_URL=https://yourdomain.com/mailframe-api
-```
-
-Then build:
-
-```bash
-npm run build
-```
-
-This produces a `dist/` folder — these are the files you will upload.
+> No Node.js, npm, or command line needed.
 
 ### Step 2 — Configure the PHP bridge
 
