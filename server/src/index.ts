@@ -2,7 +2,7 @@ import "dotenv/config";
 import express from "express";
 import cors from "cors";
 import { decodeMessageId } from "./encode.js";
-import { getFolders, getMailbox, getMessage, moveMessages, deleteMessages, markMessages, starMessage } from "./imap.js";
+import { getFolders, getMailbox, getMessage, getAttachment, moveMessages, deleteMessages, emptyFolder, markMessages, starMessage } from "./imap.js";
 import { sendMail } from "./smtp.js";
 
 const app = express();
@@ -116,16 +116,44 @@ app.post("/messages/star", async (req, res) => {
 
 // POST /messages/send
 app.post("/messages/send", async (req, res) => {
-  const { to, subject, body, replyToId } = req.body as {
-    to: string; subject: string; body: string; replyToId?: string;
+  const { to, cc, bcc, subject, body, replyToId, attachments } = req.body as {
+    to: string; cc?: string; bcc?: string; subject: string; body: string;
+    replyToId?: string;
+    attachments?: Array<{ filename: string; mimeType: string; data: string }>;
   };
   if (!to || !body) return err(res, 400, "to and body required.");
   try {
-    await sendMail({ to, subject: subject ?? "(No subject)", body, replyToId });
+    await sendMail({ to, cc, bcc, subject: subject ?? "(No subject)", body, replyToId, attachments });
     res.json({ ok: true });
   } catch (e) {
     console.error(e);
     err(res, 500, e instanceof Error ? e.message : "Send failed.");
+  }
+});
+
+// GET /messages/:id/attachments/:partId
+app.get("/messages/:id/attachments/:partId", async (req, res) => {
+  const decoded = decodeMessageId(req.params.id);
+  if (!decoded) return err(res, 400, "Invalid message id.");
+  try {
+    const result = await getAttachment(decoded.uid, decoded.mailbox, req.params.partId);
+    res.json(result);
+  } catch (e) {
+    console.error(e);
+    err(res, 500, e instanceof Error ? e.message : "Attachment fetch failed.");
+  }
+});
+
+// POST /messages/empty
+app.post("/messages/empty", async (req, res) => {
+  const { folder } = req.body as { folder: string };
+  if (!folder) return err(res, 400, "folder required.");
+  try {
+    await emptyFolder(folder);
+    res.json({ ok: true });
+  } catch (e) {
+    console.error(e);
+    err(res, 500, e instanceof Error ? e.message : "Empty folder failed.");
   }
 });
 

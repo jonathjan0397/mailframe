@@ -71,10 +71,26 @@ export const apiProvider: MailProvider = {
       method: "POST",
       body: JSON.stringify({
         to: payload.to,
+        cc: payload.cc,
+        bcc: payload.bcc,
         subject: payload.subject,
         body: payload.body,
         replyToId: payload.replyToId,
+        attachments: payload.attachments,
       }),
     });
+  },
+
+  async emptyFolder(folderId: string) {
+    await apiFetch("/messages/empty", {
+      method: "POST",
+      body: JSON.stringify({ folder: folderId }),
+    });
+  },
+
+  async getAttachment(messageId: string, partId: string) {
+    return apiFetch<{ data: string; filename: string; mimeType: string }>(
+      `/messages/${encodeURIComponent(messageId)}/attachments/${encodeURIComponent(partId)}`,
+    );
   },
 };

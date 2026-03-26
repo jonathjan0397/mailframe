@@ -14,7 +14,29 @@ import type { SendPayload } from "../features/mail/provider";
 type ComposeMode =
   | { type: "new" }
   | { type: "reply"; to: string; subject: string }
+  | { type: "replyAll"; to: string; cc: string; subject: string }
   | { type: "forward"; subject: string; body: string[] };
+
+const CONTACTS_KEY = "mailframe-contacts";
+
+function saveContact(sender: string) {
+  if (!sender || sender === "Unknown") return;
+  try {
+    const raw = localStorage.getItem(CONTACTS_KEY);
+    const contacts: string[] = raw ? (JSON.parse(raw) as string[]) : [];
+    if (!contacts.includes(sender)) {
+      contacts.unshift(sender);
+      if (contacts.length > 200) contacts.length = 200;
+      localStorage.setItem(CONTACTS_KEY, JSON.stringify(contacts));
+    }
+  } catch { /* ignore */ }
+}
+
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
 
 export function App() {
   const [activeThemeId, setActiveThemeId] = useState(themeRegistry[0].id);
@@ -38,13 +60,15 @@ export function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [newMessageCount, setNewMessageCount] = useState(0);
   const [refreshToken, setRefreshToken] = useState(0);
+  const [showKeyboardHelp, setShowKeyboardHelp] = useState(false);
 
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const settingsBtnRef = useRef<HTMLButtonElement>(null);
   const messagesListRef = useRef<HTMLUListElement>(null);
-  // Stable ref to current message ids for polling comparison (avoids stale closure)
   const messageIdsRef = useRef<Set<string>>(new Set());
+  // Ref for keyboard handler — always has the latest closure without re-registering
+  const keyHandlerRef = useRef<(e: KeyboardEvent) => void>(() => {});
 
   const provider = useMemo(
     () => (providerId === "demo" ? demoProvider : apiProvider),
@@ -57,7 +81,7 @@ export function App() {
     applyTheme(theme);
   }, [activeThemeId]);
 
-  // Clear selection when provider or folder changes (before mailbox loads)
+  // Clear selection when provider or folder changes
   useEffect(() => {
     setSelectedId(null);
     setSelectedIds(new Set());
@@ -70,7 +94,7 @@ export function App() {
     messageIdsRef.current = new Set(messages.map((m) => m.id));
   }, [messages]);
 
-  // Load mailbox (always page 1 on context change or manual refresh)
+  // Load mailbox (page 1 on context change or manual refresh)
   useEffect(() => {
     let cancelled = false;
     setMailboxLoading(true);
@@ -94,7 +118,7 @@ export function App() {
     return () => { cancelled = true; };
   }, [activeFolderId, search, provider, refreshToken]);
 
-  // Poll for new messages (60s interval; skipped in demo mode)
+  // Poll for new messages every 60s (bridge mode only)
   useEffect(() => {
     if (providerId === "demo") return;
     const timer = setInterval(() => {
@@ -103,18 +127,15 @@ export function App() {
           const incoming = snapshot.messages.filter(
             (m) => !messageIdsRef.current.has(m.id),
           );
-          if (incoming.length > 0) {
-            setNewMessageCount((n) => n + incoming.length);
-          }
-          setFolders(snapshot.folders); // keep unread counts current
+          if (incoming.length > 0) setNewMessageCount((n) => n + incoming.length);
+          setFolders(snapshot.folders);
         })
-        .catch(() => {}); // silent poll failure
+        .catch(() => {});
     }, 60_000);
     return () => clearInterval(timer);
   }, [activeFolderId, search, provider, providerId]);
 
-  // Load detail — provider intentionally omitted from deps: selection is always
-  // cleared before provider changes (see effect above), so this never fires stale.
+  // Load detail
   useEffect(() => {
     if (!selectedId) { setDetail(null); return; }
     let cancelled = false;
@@ -122,15 +143,26 @@ export function App() {
     setMessages((prev) => prev.map((m) => m.id === selectedId ? { ...m, unread: false } : m));
     provider.markRead?.([selectedId], true);
     provider.getMessageDetail(selectedId).then((d) => {
-      if (!cancelled) { setDetail(d); setDetailLoading(false); }
+      if (!cancelled) {
+        setDetail(d);
+        setDetailLoading(false);
+        saveContact(d.sender);
+      }
     });
     return () => { cancelled = true; };
   }, [selectedId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Return focus to settings button when panel closes
+  // Return focus to settings button on panel close
   useEffect(() => {
     if (!settingsOpen) settingsBtnRef.current?.focus();
   }, [settingsOpen]);
+
+  // Register stable keyboard listener (handler updated via ref each render)
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => keyHandlerRef.current(e);
+    document.addEventListener("keydown", handler);
+    return () => document.removeEventListener("keydown", handler);
+  }, []);
 
   function showToast(msg: string) {
     setToast(msg);
@@ -197,6 +229,32 @@ export function App() {
     showToast(`Moved to ${folderId}`);
   }
 
+  function handleSpam() {
+    const ids = selectedIds.size > 0 ? [...selectedIds] : selectedId ? [selectedId] : [];
+    if (!ids.length) return;
+    const spamFolder = folders.find(
+      (f) => ["Junk", "Spam"].includes(f.label) || ["Junk", "Spam", "JUNK", "SPAM"].includes(f.id),
+    );
+    if (!spamFolder) { showToast("No spam folder found"); return; }
+    provider.moveMessages?.(ids, spamFolder.id);
+    removeMessages(ids);
+    showToast("Marked as spam");
+  }
+
+  function handlePrint() {
+    window.print();
+  }
+
+  function handleEmptyFolder() {
+    provider.emptyFolder?.(activeFolderId)
+      .then(() => {
+        setMessages([]);
+        setHasNextPage(false);
+        showToast("Folder emptied");
+      })
+      .catch(() => showToast("Failed to empty folder"));
+  }
+
   function handleStar(id: string, e: React.MouseEvent) {
     e.stopPropagation();
     const msg = messages.find((m) => m.id === id);
@@ -236,15 +294,79 @@ export function App() {
     showToast("Message sent");
   }
 
+  async function handleDownloadAttachment(partId: string, filename: string) {
+    if (!detail || !provider.getAttachment) return;
+    try {
+      const result = await provider.getAttachment(detail.id, partId);
+      const binary = atob(result.data);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      const blob = new Blob([bytes], { type: result.mimeType });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = result.filename || filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch {
+      showToast("Download failed");
+    }
+  }
+
   const handleReply = useCallback(() => {
     if (!detail) return;
     setCompose({ type: "reply", to: detail.sender, subject: `Re: ${detail.subject}` });
+  }, [detail]);
+
+  const handleReplyAll = useCallback(() => {
+    if (!detail) return;
+    const allRecipients = [...(detail.to ?? []), ...(detail.cc ?? [])].join(", ");
+    setCompose({
+      type: "replyAll",
+      to: detail.sender,
+      cc: allRecipients,
+      subject: `Re: ${detail.subject}`,
+    });
   }, [detail]);
 
   const handleForward = useCallback(() => {
     if (!detail) return;
     setCompose({ type: "forward", subject: `Fwd: ${detail.subject}`, body: detail.body });
   }, [detail]);
+
+  // Update keyboard handler ref on every render so it always has the latest state
+  keyHandlerRef.current = (e: KeyboardEvent) => {
+    const target = e.target as HTMLElement;
+    if (
+      target.tagName === "INPUT" ||
+      target.tagName === "TEXTAREA" ||
+      target.tagName === "SELECT" ||
+      target.isContentEditable
+    ) return;
+
+    if (e.key === "Escape") {
+      if (showKeyboardHelp) { setShowKeyboardHelp(false); return; }
+      if (compose) { setCompose(null); return; }
+      if (settingsOpen) { setSettingsOpen(false); return; }
+      if (selectedId) { setSelectedId(null); return; }
+      return;
+    }
+
+    if (compose || settingsOpen || showKeyboardHelp) return;
+
+    switch (e.key) {
+      case "c": setCompose({ type: "new" }); break;
+      case "r": if (detail) handleReply(); break;
+      case "a": if (detail) handleReplyAll(); break;
+      case "f": if (detail) handleForward(); break;
+      case "e": handleArchive(); break;
+      case "#": handleDelete(); break;
+      case "u": handleMarkUnread(); break;
+      case "?": setShowKeyboardHelp(true); break;
+    }
+  };
 
   const rowVirtualizer = useVirtualizer({
     count: messages.length,
@@ -257,13 +379,51 @@ export function App() {
   const moveTargets = folders.filter((f) => f.id !== activeFolderId && f.id !== "Trash");
   const bulkActive = selectedIds.size > 0;
   const allSelected = messages.length > 0 && selectedIds.size === messages.length;
+  const isTrash = activeFolder?.label === "Trash" || activeFolderId === "Trash";
+  const hasReplyAll = !!(detail?.to?.length || detail?.cc?.length);
 
   return (
     <div className="mf-shell">
+      {/* Keyboard shortcut help overlay */}
+      {showKeyboardHelp && (
+        <div className="mf-kb-overlay" onClick={() => setShowKeyboardHelp(false)}>
+          <div
+            className="mf-kb-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Keyboard shortcuts"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mf-kb-header">
+              <span>Keyboard shortcuts</span>
+              <button
+                className="mf-kb-close"
+                onClick={() => setShowKeyboardHelp(false)}
+                aria-label="Close keyboard shortcuts"
+              >
+                ✕
+              </button>
+            </div>
+            <dl className="mf-kb-grid">
+              <dt><kbd>c</kbd></dt><dd>Compose</dd>
+              <dt><kbd>r</kbd></dt><dd>Reply</dd>
+              <dt><kbd>a</kbd></dt><dd>Reply All</dd>
+              <dt><kbd>f</kbd></dt><dd>Forward</dd>
+              <dt><kbd>e</kbd></dt><dd>Archive</dd>
+              <dt><kbd>#</kbd></dt><dd>Delete</dd>
+              <dt><kbd>u</kbd></dt><dd>Mark as unread</dd>
+              <dt><kbd>?</kbd></dt><dd>Show shortcuts</dd>
+              <dt><kbd>Esc</kbd></dt><dd>Close / deselect</dd>
+            </dl>
+          </div>
+        </div>
+      )}
+
       {/* Compose modal */}
       {compose && (
         <ComposeModal
-          initialTo={compose.type === "reply" ? compose.to : ""}
+          initialTo={compose.type === "reply" || compose.type === "replyAll" ? compose.to : ""}
+          initialCc={compose.type === "replyAll" ? compose.cc : ""}
           initialSubject={compose.type !== "new" ? compose.subject : ""}
           initialBody={compose.type === "forward" ? compose.body.join("\n\n") : ""}
           onSend={handleSend}
@@ -317,10 +477,7 @@ export function App() {
                 tabIndex={0}
                 aria-selected={folder.id === activeFolderId}
                 className={`mf-folder-item${folder.id === activeFolderId ? " active" : ""}`}
-                onClick={() => {
-                  setActiveFolderId(folder.id);
-                  setSidebarOpen(false);
-                }}
+                onClick={() => { setActiveFolderId(folder.id); setSidebarOpen(false); }}
                 onKeyDown={(e) => {
                   if (e.key === "Enter" || e.key === " ") {
                     e.preventDefault();
@@ -351,6 +508,15 @@ export function App() {
             title="Settings"
           >
             ⚙
+          </button>
+          <button
+            className="mf-settings-btn"
+            onClick={() => setShowKeyboardHelp(true)}
+            aria-label="Keyboard shortcuts"
+            title="Keyboard shortcuts (?)"
+            style={{ marginLeft: "4px" }}
+          >
+            ?
           </button>
         </div>
       </aside>
@@ -423,7 +589,13 @@ export function App() {
         )}
 
         {!mailboxLoading && !mailboxError && messages.length === 0 && (
-          <div className="mf-messages-empty">No messages</div>
+          <div className="mf-messages-empty">
+            {isTrash && provider.emptyFolder ? (
+              <div style={{ textAlign: "center" }}>
+                <div style={{ marginBottom: 12 }}>Trash is empty</div>
+              </div>
+            ) : "No messages"}
+          </div>
         )}
 
         {!mailboxLoading && !mailboxError && messages.length > 0 && (
@@ -433,12 +605,7 @@ export function App() {
             role="list"
             aria-label="Messages"
           >
-            <div
-              style={{
-                height: `${rowVirtualizer.getTotalSize()}px`,
-                position: "relative",
-              }}
-            >
+            <div style={{ height: `${rowVirtualizer.getTotalSize()}px`, position: "relative" }}>
               {rowVirtualizer.getVirtualItems().map((virtualItem) => {
                 const msg = messages[virtualItem.index];
                 return (
@@ -501,6 +668,18 @@ export function App() {
           </ul>
         )}
 
+        {/* Empty Trash */}
+        {isTrash && messages.length > 0 && !mailboxLoading && provider.emptyFolder && (
+          <div className="mf-load-more">
+            <button
+              className="mf-empty-trash-btn"
+              onClick={handleEmptyFolder}
+            >
+              Empty Trash
+            </button>
+          </div>
+        )}
+
         {/* Load more */}
         {hasNextPage && !mailboxLoading && (
           <div className="mf-load-more">
@@ -539,15 +718,29 @@ export function App() {
               </button>
               <div className="mf-pane-subject">{detail.subject}</div>
               <div className="mf-pane-meta">
-                <span className="mf-pane-sender">{detail.sender}</span>
+                <div className="mf-pane-addresses">
+                  <span className="mf-pane-sender">From: {detail.sender}</span>
+                  {detail.to && detail.to.length > 0 && (
+                    <span className="mf-pane-recipients">To: {detail.to.join(", ")}</span>
+                  )}
+                  {detail.cc && detail.cc.length > 0 && (
+                    <span className="mf-pane-recipients">CC: {detail.cc.join(", ")}</span>
+                  )}
+                </div>
                 <span className="mf-pane-timestamp">{detail.timestamp}</span>
               </div>
             </div>
+
             <div className="mf-pane-actions" role="toolbar" aria-label="Message actions">
               <button className="mf-action-btn" onClick={handleReply}>Reply</button>
+              {hasReplyAll && (
+                <button className="mf-action-btn" onClick={handleReplyAll}>Reply All</button>
+              )}
               <button className="mf-action-btn" onClick={handleForward}>Forward</button>
               <button className="mf-action-btn" onClick={handleMarkUnread}>Mark unread</button>
               <button className="mf-action-btn" onClick={() => handleArchive()}>Archive</button>
+              <button className="mf-action-btn" onClick={handleSpam}>Spam</button>
+              <button className="mf-action-btn" onClick={handlePrint}>Print</button>
               {moveTargets.length > 0 && (
                 <select
                   className="mf-move-select"
@@ -567,6 +760,7 @@ export function App() {
                 Delete
               </button>
             </div>
+
             {detail.bodyHtml ? (
               <div
                 className="mf-pane-html"
@@ -601,6 +795,32 @@ export function App() {
                 {detail.body.map((paragraph, i) => (
                   <p key={i}>{paragraph}</p>
                 ))}
+              </div>
+            )}
+
+            {detail.attachments && detail.attachments.length > 0 && (
+              <div className="mf-pane-attachments">
+                <div className="mf-attachments-label">
+                  Attachments ({detail.attachments.length})
+                </div>
+                <ul className="mf-attachments-list">
+                  {detail.attachments.map((att) => (
+                    <li key={att.partId} className="mf-attachment-item">
+                      <span className="mf-att-icon">📎</span>
+                      <span className="mf-att-name">{att.filename}</span>
+                      <span className="mf-att-size">{formatFileSize(att.size)}</span>
+                      {provider.getAttachment && (
+                        <button
+                          className="mf-att-download"
+                          onClick={() => handleDownloadAttachment(att.partId, att.filename)}
+                          aria-label={`Download ${att.filename}`}
+                        >
+                          ↓ Download
+                        </button>
+                      )}
+                    </li>
+                  ))}
+                </ul>
               </div>
             )}
           </>

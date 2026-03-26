@@ -15,14 +15,27 @@ export type MailItem = {
   starred?: boolean;
 };
 
+export type MailAttachment = {
+  partId: string;
+  filename: string;
+  mimeType: string;
+  size: number;
+};
+
 export type MailMessageDetail = {
   id: string;
   sender: string;
+  /** All To recipients (full "Name <email>" format when available). */
+  to?: string[];
+  /** CC recipients. */
+  cc?: string[];
   subject: string;
   timestamp: string;
   body: string[];
   /** Sanitized HTML body, if the message contains an HTML part. */
   bodyHtml?: string;
+  /** Attachment metadata list. */
+  attachments?: MailAttachment[];
 };
 
 export type MailboxSnapshot = {
