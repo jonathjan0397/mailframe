@@ -133,7 +133,9 @@ export function App() {
   const [activeThemeId, setActiveThemeId] = useState(
     () => localStorage.getItem("mailframe-theme") ?? themeRegistry[0].id,
   );
-  const [providerId, setProviderId] = useState<ProviderId>("demo");
+  const [providerId, setProviderId] = useState<ProviderId>(
+    () => (localStorage.getItem("mailframe-provider") as ProviderId | null) ?? "demo",
+  );
   // Auth state: null = checking, false = not logged in, email string = logged in
   const [authState, setAuthState] = useState<null | false | string>(null);
   const [activeFolderId, setActiveFolderId] = useState("INBOX");
@@ -150,6 +152,11 @@ export function App() {
   const [page, setPage] = useState(1);
   const [hasNextPage, setHasNextPage] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
+  type AttachmentPreview = { filename: string; mimeType: string; data: string };
+  const [attachmentPreview, setAttachmentPreview] = useState<AttachmentPreview | null>(null);
+  const [previewLoading, setPreviewLoading] = useState<string | null>(null); // partId being loaded
+  const [imageThumbs, setImageThumbs] = useState<Record<string, string>>({}); // partId -> dataUrl
+
   const [toast, setToast] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -484,6 +491,25 @@ export function App() {
     return () => { cancelled = true; };
   }, [selectedId]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Auto-load image thumbnails when detail changes
+  useEffect(() => {
+    setImageThumbs({});
+    if (!detail?.attachments || !provider.getAttachment) return;
+    let cancelled = false;
+    const imageAtts = detail.attachments.filter((a) => a.mimeType.startsWith("image/"));
+    for (const att of imageAtts) {
+      provider.getAttachment(detail.id, att.partId).then((result) => {
+        if (!cancelled) {
+          setImageThumbs((prev) => ({
+            ...prev,
+            [att.partId]: `data:${result.mimeType};base64,${result.data}`,
+          }));
+        }
+      }).catch(() => {});
+    }
+    return () => { cancelled = true; };
+  }, [detail?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Return focus to settings button on panel close
   useEffect(() => {
     if (!settingsOpen) settingsBtnRef.current?.focus();
@@ -769,6 +795,32 @@ export function App() {
     }
   }
 
+  function isPreviewable(mimeType: string): boolean {
+    return (
+      mimeType.startsWith("image/") ||
+      mimeType === "application/pdf" ||
+      mimeType.startsWith("text/") ||
+      mimeType === "application/json"
+    );
+  }
+
+  async function handlePreviewAttachment(partId: string, filename: string) {
+    if (!detail || !provider.getAttachment) return;
+    setPreviewLoading(partId);
+    try {
+      const result = await provider.getAttachment(detail.id, partId);
+      setAttachmentPreview({
+        filename: result.filename || filename,
+        mimeType: result.mimeType,
+        data: result.data,
+      });
+    } catch {
+      showToast("Preview failed");
+    } finally {
+      setPreviewLoading(null);
+    }
+  }
+
   const handleReply = useCallback(() => {
     if (!detail) return;
     setCompose({ type: "reply", to: detail.sender, subject: `Re: ${detail.subject}` });
@@ -913,7 +965,7 @@ export function App() {
           activeThemeId={activeThemeId}
           onThemeChange={handleThemeChange}
           providerId={providerId}
-          onProviderChange={setProviderId}
+          onProviderChange={(id) => { localStorage.setItem("mailframe-provider", id); setProviderId(id); }}
           signature={signature}
           onSignatureChange={handleSignatureChange}
           onClose={() => setSettingsOpen(false)}
@@ -973,6 +1025,47 @@ export function App() {
               </button>
             </div>
           </form>
+        </div>
+      )}
+
+      {/* Attachment Preview Modal */}
+      {attachmentPreview && (
+        <div
+          className="mf-preview-overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-label={`Preview: ${attachmentPreview.filename}`}
+          onClick={(e) => { if (e.target === e.currentTarget) setAttachmentPreview(null); }}
+        >
+          <div className="mf-preview-modal">
+            <div className="mf-preview-header">
+              <span className="mf-preview-filename">{attachmentPreview.filename}</span>
+              <button
+                className="mf-preview-close"
+                onClick={() => setAttachmentPreview(null)}
+                aria-label="Close preview"
+              >✕</button>
+            </div>
+            <div className="mf-preview-body">
+              {attachmentPreview.mimeType.startsWith("image/") ? (
+                <img
+                  className="mf-preview-image"
+                  src={`data:${attachmentPreview.mimeType};base64,${attachmentPreview.data}`}
+                  alt={attachmentPreview.filename}
+                />
+              ) : attachmentPreview.mimeType === "application/pdf" ? (
+                <iframe
+                  className="mf-preview-iframe"
+                  src={`data:application/pdf;base64,${attachmentPreview.data}`}
+                  title={attachmentPreview.filename}
+                />
+              ) : (
+                <pre className="mf-preview-text">
+                  {atob(attachmentPreview.data)}
+                </pre>
+              )}
+            </div>
+          </div>
         </div>
       )}
 
@@ -1664,10 +1757,29 @@ export function App() {
                 </div>
                 <ul className="mf-attachments-list">
                   {detail.attachments.map((att) => (
-                    <li key={att.partId} className="mf-attachment-item">
-                      <span className="mf-att-icon">📎</span>
+                    <li key={att.partId} className={`mf-attachment-item${imageThumbs[att.partId] ? " mf-attachment-item--has-thumb" : ""}`}>
+                      {imageThumbs[att.partId] ? (
+                        <img
+                          className="mf-att-thumb"
+                          src={imageThumbs[att.partId]}
+                          alt={att.filename}
+                          onClick={() => setAttachmentPreview({ filename: att.filename, mimeType: att.mimeType, data: imageThumbs[att.partId].split(",")[1] })}
+                        />
+                      ) : (
+                        <span className="mf-att-icon">📎</span>
+                      )}
                       <span className="mf-att-name">{att.filename}</span>
                       <span className="mf-att-size">{formatFileSize(att.size)}</span>
+                      {provider.getAttachment && isPreviewable(att.mimeType) && (
+                        <button
+                          className="mf-att-preview"
+                          onClick={() => handlePreviewAttachment(att.partId, att.filename)}
+                          disabled={previewLoading === att.partId}
+                          aria-label={`Preview ${att.filename}`}
+                        >
+                          {previewLoading === att.partId ? "…" : "👁 Preview"}
+                        </button>
+                      )}
                       {provider.getAttachment && (
                         <button
                           className="mf-att-download"
