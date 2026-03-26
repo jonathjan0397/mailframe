@@ -244,6 +244,7 @@ function mf_decode_part(string $data, int $encoding): string {
  *   $out['text']        — ['section', 'encoding', 'charset']
  *   $out['html']        — same
  *   $out['attachments'] — ['partId', 'filename', 'mimeType', 'size', 'encoding']
+ *   $out['inline']      — ['partId', 'cid', 'mimeType', 'encoding'] (CID-referenced images)
  */
 function mf_walk_struct(object $s, string $sec, array &$out): void {
     if (!empty($s->parts) && is_array($s->parts)) {
@@ -269,16 +270,20 @@ function mf_walk_struct(object $s, string $sec, array &$out): void {
         }
     }
 
-    // Collect filename from disposition or type parameters
+    // Collect filename — check dparameters (Content-Disposition params) first,
+    // then fall back to parameters (Content-Type name=). Also handle RFC 5987
+    // encoded variants (filename* / name*).
     $filename = null;
     foreach ($s->dparameters ?? [] as $p) {
-        if (strtolower($p->attribute) === 'filename') {
+        $attr = strtolower($p->attribute);
+        if ($attr === 'filename' || $attr === 'filename*') {
             $filename = mf_decode_header($p->value);
         }
     }
     if (!$filename) {
         foreach ($s->parameters ?? [] as $p) {
-            if (in_array(strtolower($p->attribute), ['name', 'filename'], true)) {
+            $attr = strtolower($p->attribute);
+            if (in_array($attr, ['name', 'filename', 'name*', 'filename*'], true)) {
                 $filename = mf_decode_header($p->value);
             }
         }
@@ -286,28 +291,60 @@ function mf_walk_struct(object $s, string $sec, array &$out): void {
 
     $section = $sec ?: '1';
 
+    $mime_prefix = match($type) {
+        0 => 'text', 1 => 'multipart', 2 => 'message',
+        3 => 'application', 4 => 'audio', 5 => 'image', 6 => 'video',
+        default => 'application',
+    };
+
+    // Plain text body part
     if ($type === 0 && $subtype === 'plain' && $disp !== 'attachment' && !$filename) {
         $out['text'][] = ['section' => $section, 'encoding' => $enc, 'charset' => $charset];
-    } elseif ($type === 0 && $subtype === 'html' && $disp !== 'attachment' && !$filename) {
+        return;
+    }
+
+    // HTML body part
+    if ($type === 0 && $subtype === 'html' && $disp !== 'attachment' && !$filename) {
         $out['html'][] = ['section' => $section, 'encoding' => $enc, 'charset' => $charset];
-    } elseif ($type === 5 && !empty($s->id) && $disp !== 'attachment') {
-        // Inline image with a Content-ID (used in multipart/related HTML emails)
-        $cid = trim((string)$s->id, '<> ');
-        if ($cid) {
-            $mime_prefix = 'image';
-            $out['inline'][] = [
-                'partId'   => $section,
-                'cid'      => $cid,
-                'mimeType' => "$mime_prefix/$subtype",
-                'encoding' => $enc,
-            ];
+        return;
+    }
+
+    // Image with a Content-ID and NOT explicitly dispositioned as attachment →
+    // treat as CID-inline (embedded in HTML via cid:). These are also added to
+    // inline[] so the caller can substitute data: URIs into the HTML body.
+    $cid = !empty($s->id) ? trim((string)$s->id, '<> ') : null;
+    if ($type === 5 && $cid && $disp !== 'attachment') {
+        $out['inline'][] = [
+            'partId'   => $section,
+            'cid'      => $cid,
+            'mimeType' => "$mime_prefix/$subtype",
+            'encoding' => $enc,
+        ];
+        // Also expose as a downloadable attachment so the user can access it
+        $fallback = $filename ?: "image.$subtype";
+        $out['attachments'][] = [
+            'partId'   => $section,
+            'filename' => $fallback,
+            'mimeType' => "$mime_prefix/$subtype",
+            'size'     => (int)($s->bytes ?? 0),
+            'encoding' => $enc,
+        ];
+        return;
+    }
+
+    // Any binary part (image/audio/video/application) or anything with a filename
+    if ($filename || in_array($type, [3, 4, 5, 6], true)) {
+        if (!$filename) {
+            // Fallback name for unnamed binary parts (e.g. Android sends bare images)
+            $ext = match($type) {
+                5 => strtolower($subtype ?: 'jpg'),
+                4 => strtolower($subtype ?: 'mp3'),
+                6 => strtolower($subtype ?: 'mp4'),
+                3 => 'bin',
+                default => 'dat',
+            };
+            $filename = "attachment.$ext";
         }
-    } elseif ($filename) {
-        $mime_prefix = match($type) {
-            0 => 'text', 1 => 'multipart', 2 => 'message',
-            3 => 'application', 4 => 'audio', 5 => 'image', 6 => 'video',
-            default => 'application',
-        };
         $out['attachments'][] = [
             'partId'   => $section,
             'filename' => $filename,
@@ -707,6 +744,27 @@ if ($mf_method === 'GET' && preg_match('#^messages/([^/]+)$#', $mf_route, $rm)) 
         $body_text = (string)imap_body($conn, $msgno);
     }
 
+    // Replace cid: references in HTML body with inline data: URIs so images
+    // render directly in the browser without needing a separate fetch.
+    if ($body_html && !empty($parts['inline'])) {
+        $cid_map = [];
+        foreach ($parts['inline'] as $ip) {
+            $cid_map[$ip['cid']] = $ip;
+        }
+        $body_html = preg_replace_callback(
+            '/\bcid:([^\s"\'>\)]+)/i',
+            static function (array $m) use ($conn, $msgno, $cid_map): string {
+                $cid = rtrim($m[1], ';');
+                if (!isset($cid_map[$cid])) return $m[0];
+                $ip   = $cid_map[$cid];
+                $raw  = mf_decode_part(imap_fetchbody($conn, $msgno, $ip['partId']), $ip['encoding']);
+                $b64  = base64_encode($raw);
+                return 'data:' . $ip['mimeType'] . ';base64,' . $b64;
+            },
+            $body_html
+        );
+    }
+
     $paragraphs = $body_text
         ? array_values(array_filter(
             array_map('trim', preg_split('/\n\s*\n/', $body_text)),
@@ -761,7 +819,7 @@ if ($mf_method === 'GET' && preg_match('#^messages/([^/]+)/attachments/(.+)$#', 
     if (!$msgno) { imap_close($conn); mf_err('Message not found.', 404); }
 
     $struct = imap_fetchstructure($conn, $msgno);
-    $parts  = ['text' => [], 'html' => [], 'attachments' => []];
+    $parts  = ['text' => [], 'html' => [], 'attachments' => [], 'inline' => []];
     mf_walk_struct($struct, '', $parts);
 
     $meta = null;
