@@ -455,6 +455,8 @@ export function App() {
 
   // Load mailbox (page 1 on context change or manual refresh)
   useEffect(() => {
+    // Don't fetch until the user is authenticated (api provider) or on demo
+    if (providerId === "api" && typeof authState !== "string") return;
     let cancelled = false;
     setMailboxLoading(true);
     setMailboxError(null);
@@ -475,7 +477,7 @@ export function App() {
         setMailboxLoading(false);
       });
     return () => { cancelled = true; };
-  }, [activeFolderId, search, provider, refreshToken]);
+  }, [activeFolderId, search, provider, refreshToken, authState]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Poll for new messages every 60s (bridge mode only)
   useEffect(() => {
