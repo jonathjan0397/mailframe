@@ -1582,6 +1582,32 @@ kbd {
   display: none;
 }
 
+/* Floating compose button (FAB) — mobile reading pane only */
+.mf-fab-compose {
+  display: none;
+  position: fixed;
+  bottom: 24px;
+  right: 20px;
+  z-index: 160;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: var(--mf-color-accent, #1a73e8);
+  color: var(--mf-color-accent-text, #fff);
+  font-size: 24px;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+  transition: background 0.15s, transform 0.1s;
+  border: none;
+  cursor: pointer;
+}
+
+.mf-fab-compose:hover {
+  background: var(--mf-color-accent-hover, #1557b0);
+  transform: scale(1.06);
+}
+
 /* =========================================
    Responsive — tablet ≤ 900px
    ========================================= */
@@ -1693,6 +1719,116 @@ kbd {
     max-width: 100%;
     border-left: none;
     box-shadow: none;
+  }
+
+  /* Compose modal: full-screen on mobile */
+  .mf-compose-overlay {
+    align-items: stretch;
+    justify-content: stretch;
+    padding: 0;
+  }
+
+  .mf-compose-modal {
+    width: 100% !important;
+    max-width: 100% !important;
+    height: 100%;
+    max-height: 100%;
+    border-radius: 0;
+  }
+
+  /* Attachment preview modal: full-screen on mobile */
+  .mf-preview-overlay {
+    align-items: stretch;
+    justify-content: stretch;
+  }
+
+  .mf-preview-modal {
+    width: 100%;
+    max-width: 100%;
+    height: 100%;
+    max-height: 100%;
+    border-radius: 0;
+  }
+
+  .mf-preview-image {
+    max-height: 80vh;
+  }
+
+  .mf-preview-iframe,
+  .mf-preview-text {
+    height: 80vh;
+  }
+
+  /* Prevent iOS from zooming inputs — font-size must be ≥ 16px */
+  .mf-search,
+  .mf-compose-field input,
+  .mf-quick-reply-input,
+  .mf-login-field input,
+  .mf-login-field select {
+    font-size: 16px !important;
+  }
+
+  /* Bigger touch targets for folder items */
+  .mf-folder-item {
+    min-height: 44px;
+  }
+
+  /* Bigger touch targets for message items */
+  .mf-msg-item {
+    min-height: 64px;
+    padding: 10px 12px;
+  }
+
+  /* Pane action buttons: wrap and bigger tap area */
+  .mf-pane-actions {
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 8px 12px;
+  }
+
+  .mf-action-btn {
+    padding: 8px 14px;
+    font-size: var(--mf-font-size-sm, 13px);
+  }
+
+  /* Make pane header padding tighter */
+  .mf-pane-header {
+    padding: 10px 12px 6px;
+  }
+
+  .mf-pane-subject {
+    font-size: 16px;
+  }
+
+  /* Quick reply: full width, bigger touch target */
+  .mf-quick-reply {
+    padding: 10px 12px;
+  }
+
+  /* Floating compose button (FAB) — visible only in reading pane on mobile */
+  .mf-fab-compose {
+    display: flex;
+  }
+
+  /* Attachment list: stack on narrow screens */
+  .mf-attachment-item {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  /* Account switcher: slightly bigger avatars */
+  .mf-account-avatar {
+    width: 36px;
+    height: 36px;
+    font-size: 14px;
+  }
+
+  /* Toast: full width at bottom */
+  .mf-toast {
+    left: 12px;
+    right: 12px;
+    bottom: 16px;
+    text-align: center;
   }
 }
 

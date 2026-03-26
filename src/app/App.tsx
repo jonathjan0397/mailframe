@@ -1592,6 +1592,15 @@ export function App() {
       />
 
       {/* Reading pane */}
+      {/* Floating compose button — mobile reading pane only */}
+      {selectedId && provider.sendMessage && (
+        <button
+          className="mf-fab-compose"
+          onClick={() => setCompose({ type: "new" })}
+          aria-label="Compose new message"
+        >✏</button>
+      )}
+
       <main
         className={`mf-pane${selectedId ? " has-message" : ""}`}
         aria-label="Reading pane"
