@@ -175,6 +175,51 @@ input {
   list-style: none;
 }
 
+/* Loading skeleton */
+.mf-messages-status {
+  flex: 1;
+  overflow: hidden;
+}
+
+.mf-skeleton-row {
+  height: 73px;
+  border-bottom: 1px solid var(--mf-color-border, #e0e0e0);
+  background: linear-gradient(
+    90deg,
+    var(--mf-color-surface-alt, #f8f9fa) 25%,
+    var(--mf-color-hover, #f1f3f4) 50%,
+    var(--mf-color-surface-alt, #f8f9fa) 75%
+  );
+  background-size: 400% 100%;
+  animation: mf-shimmer 1.4s ease infinite;
+}
+
+@keyframes mf-shimmer {
+  0%   { background-position: 100% 0; }
+  100% { background-position: -100% 0; }
+}
+
+/* Error and empty states in message list */
+.mf-messages-error {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  color: #c5221f;
+  font-size: var(--mf-font-size-sm, 12px);
+  text-align: center;
+}
+
+.mf-messages-empty {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--mf-color-text-muted, #5f6368);
+  font-size: var(--mf-font-size-base, 14px);
+}
+
 .mf-message-row {
   display: flex;
   flex-direction: row;

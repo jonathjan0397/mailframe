@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import { applyTheme } from "../themes/tokens";
 import { themeRegistry } from "../themes/registry";
 import { demoProvider } from "../features/mail/providers/demo-provider";
@@ -26,6 +27,8 @@ export function App() {
   const [detail, setDetail] = useState<MailMessageDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [compose, setCompose] = useState<ComposeMode | null>(null);
+  const [mailboxLoading, setMailboxLoading] = useState(false);
+  const [mailboxError, setMailboxError] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -33,6 +36,7 @@ export function App() {
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const settingsBtnRef = useRef<HTMLButtonElement>(null);
+  const messagesListRef = useRef<HTMLUListElement>(null);
 
   const provider = useMemo(
     () => (providerId === "demo" ? demoProvider : apiProvider),
@@ -55,10 +59,22 @@ export function App() {
 
   // Load mailbox
   useEffect(() => {
-    provider.getMailboxSnapshot({ folderId: activeFolderId, query: search }).then((snapshot) => {
-      setFolders(snapshot.folders);
-      setMessages(snapshot.messages);
-    });
+    let cancelled = false;
+    setMailboxLoading(true);
+    setMailboxError(null);
+    provider.getMailboxSnapshot({ folderId: activeFolderId, query: search })
+      .then((snapshot) => {
+        if (cancelled) return;
+        setFolders(snapshot.folders);
+        setMessages(snapshot.messages);
+        setMailboxLoading(false);
+      })
+      .catch((e: unknown) => {
+        if (cancelled) return;
+        setMailboxError(e instanceof Error ? e.message : "Failed to load mailbox.");
+        setMailboxLoading(false);
+      });
+    return () => { cancelled = true; };
   }, [activeFolderId, search, provider]);
 
   // Load detail — provider intentionally omitted from deps: selection is always
@@ -175,6 +191,13 @@ export function App() {
     if (!detail) return;
     setCompose({ type: "forward", subject: `Fwd: ${detail.subject}`, body: detail.body });
   }, [detail]);
+
+  const rowVirtualizer = useVirtualizer({
+    count: messages.length,
+    getScrollElement: () => messagesListRef.current,
+    estimateSize: () => 73,
+    overscan: 8,
+  });
 
   const activeFolder = folders.find((f) => f.id === activeFolderId);
   const moveTargets = folders.filter((f) => f.id !== activeFolderId && f.id !== "Trash");
@@ -320,56 +343,100 @@ export function App() {
           />
         </div>
 
-        <ul className="mf-messages" role="list" aria-label="Messages">
-          {messages.map((msg) => (
-            <li
-              key={msg.id}
-              role="button"
-              tabIndex={0}
-              aria-label={`${msg.unread ? "Unread, " : ""}From ${msg.sender}: ${msg.subject}`}
-              aria-selected={selectedId === msg.id}
-              className={[
-                "mf-message-row",
-                msg.unread ? "unread" : "",
-                selectedId === msg.id ? "selected" : "",
-                selectedIds.has(msg.id) ? "checked" : "",
-              ].filter(Boolean).join(" ")}
-              onClick={() => { setSelectedId(msg.id); setSelectedIds(new Set()); }}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" || e.key === " ") {
-                  e.preventDefault();
-                  setSelectedId(msg.id);
-                  setSelectedIds(new Set());
-                }
+        {mailboxLoading && (
+          <div className="mf-messages-status" aria-live="polite" aria-busy="true">
+            <div className="mf-skeleton-row" />
+            <div className="mf-skeleton-row" />
+            <div className="mf-skeleton-row" />
+            <div className="mf-skeleton-row" />
+            <div className="mf-skeleton-row" />
+          </div>
+        )}
+
+        {!mailboxLoading && mailboxError && (
+          <div className="mf-messages-error" role="alert">
+            <span>⚠ {mailboxError}</span>
+          </div>
+        )}
+
+        {!mailboxLoading && !mailboxError && messages.length === 0 && (
+          <div className="mf-messages-empty">No messages</div>
+        )}
+
+        {!mailboxLoading && !mailboxError && messages.length > 0 && (
+          <ul
+            ref={messagesListRef}
+            className="mf-messages"
+            role="list"
+            aria-label="Messages"
+          >
+            <div
+              style={{
+                height: `${rowVirtualizer.getTotalSize()}px`,
+                position: "relative",
               }}
             >
-              <input
-                type="checkbox"
-                className="mf-message-check"
-                checked={selectedIds.has(msg.id)}
-                aria-label={`Select message from ${msg.sender}`}
-                onChange={() => {}}
-                onClick={(e) => handleToggleSelect(msg.id, e)}
-              />
-              <div className="mf-message-content">
-                <div className="mf-message-top">
-                  <span className="mf-message-sender">{msg.sender}</span>
-                  <span className="mf-message-timestamp">{msg.timestamp}</span>
-                </div>
-                <div className="mf-message-subject">{msg.subject}</div>
-                <div className="mf-message-preview">{msg.preview}</div>
-              </div>
-              <button
-                className={`mf-star-btn${msg.starred ? " starred" : ""}`}
-                onClick={(e) => handleStar(msg.id, e)}
-                aria-label={msg.starred ? "Unstar message" : "Star message"}
-                aria-pressed={msg.starred}
-              >
-                {msg.starred ? "★" : "☆"}
-              </button>
-            </li>
-          ))}
-        </ul>
+              {rowVirtualizer.getVirtualItems().map((virtualItem) => {
+                const msg = messages[virtualItem.index];
+                return (
+                  <li
+                    key={msg.id}
+                    role="button"
+                    tabIndex={0}
+                    aria-label={`${msg.unread ? "Unread, " : ""}From ${msg.sender}: ${msg.subject}`}
+                    aria-selected={selectedId === msg.id}
+                    className={[
+                      "mf-message-row",
+                      msg.unread ? "unread" : "",
+                      selectedId === msg.id ? "selected" : "",
+                      selectedIds.has(msg.id) ? "checked" : "",
+                    ].filter(Boolean).join(" ")}
+                    style={{
+                      position: "absolute",
+                      top: 0,
+                      left: 0,
+                      width: "100%",
+                      transform: `translateY(${virtualItem.start}px)`,
+                    }}
+                    onClick={() => { setSelectedId(msg.id); setSelectedIds(new Set()); }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        setSelectedId(msg.id);
+                        setSelectedIds(new Set());
+                      }
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      className="mf-message-check"
+                      checked={selectedIds.has(msg.id)}
+                      aria-label={`Select message from ${msg.sender}`}
+                      onChange={() => {}}
+                      onClick={(e) => handleToggleSelect(msg.id, e)}
+                    />
+                    <div className="mf-message-content">
+                      <div className="mf-message-top">
+                        <span className="mf-message-sender">{msg.sender}</span>
+                        <span className="mf-message-timestamp">{msg.timestamp}</span>
+                      </div>
+                      <div className="mf-message-subject">{msg.subject}</div>
+                      <div className="mf-message-preview">{msg.preview}</div>
+                    </div>
+                    <button
+                      className={`mf-star-btn${msg.starred ? " starred" : ""}`}
+                      onClick={(e) => handleStar(msg.id, e)}
+                      aria-label={msg.starred ? "Unstar message" : "Star message"}
+                      aria-pressed={msg.starred}
+                    >
+                      {msg.starred ? "★" : "☆"}
+                    </button>
+                  </li>
+                );
+              })}
+            </div>
+          </ul>
+        )}
       </section>
 
       {/* Reading pane */}
