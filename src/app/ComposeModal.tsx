@@ -8,6 +8,7 @@ type Props = {
   initialSubject?: string;
   initialBody?: string;
   onSend: (payload: SendPayload) => void;
+  onSendLater?: (payload: SendPayload, scheduledAt: number) => void;
   onClose: () => void;
 };
 
@@ -109,6 +110,7 @@ export function ComposeModal({
   initialSubject = "",
   initialBody = "",
   onSend,
+  onSendLater,
   onClose,
 }: Props) {
   const draftRef = useRef(loadDraft(initialTo, initialCc, initialSubject, initialBody));
@@ -121,6 +123,9 @@ export function ComposeModal({
   const [showCcBcc, setShowCcBcc] = useState(!!(draft.cc || draft.bcc));
   const [attachments, setAttachments] = useState<File[]>([]);
   const [draftSaved, setDraftSaved] = useState(false);
+  const [isDragOver, setIsDragOver] = useState(false);
+  const [showSchedule, setShowSchedule] = useState(false);
+  const [scheduleTime, setScheduleTime] = useState("");
 
   const editorRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -199,6 +204,40 @@ export function ComposeModal({
     if (url?.trim()) execFormat("createLink", url.trim());
   }
 
+  function handleDragOver(e: React.DragEvent) {
+    e.preventDefault();
+    setIsDragOver(true);
+  }
+
+  function handleDragLeave(e: React.DragEvent) {
+    if (!e.currentTarget.contains(e.relatedTarget as Node)) setIsDragOver(false);
+  }
+
+  function handleDrop(e: React.DragEvent) {
+    e.preventDefault();
+    setIsDragOver(false);
+    const files = Array.from(e.dataTransfer.files);
+    if (files.length) setAttachments((prev) => [...prev, ...files]);
+  }
+
+  async function handleSendLater() {
+    if (!to.trim() || !scheduleTime) return;
+    localStorage.removeItem(DRAFT_KEY);
+    const bodyHtml = editorRef.current?.innerHTML ?? "";
+    const body = editorRef.current?.innerText ?? "";
+    const scheduledAt = new Date(scheduleTime).getTime();
+    const attachmentPayloads = attachments.length > 0 ? await filesToPayload(attachments) : undefined;
+    onSendLater?.({
+      to: to.trim(),
+      cc: cc.trim() || undefined,
+      bcc: bcc.trim() || undefined,
+      subject: subject.trim(),
+      body: body.trim(),
+      bodyHtml: bodyHtml || undefined,
+      attachments: attachmentPayloads,
+    }, scheduledAt);
+  }
+
   async function handleSend() {
     if (!to.trim()) return;
     localStorage.removeItem(DRAFT_KEY);
@@ -252,7 +291,21 @@ export function ComposeModal({
         {contacts.map((c) => <option key={c} value={c} />)}
       </datalist>
 
-      <div className="mf-compose-modal" role="dialog" aria-modal="true" aria-label={title}>
+      <div
+        className={`mf-compose-modal${isDragOver ? " mf-compose-drag-over" : ""}`}
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+        onDragOver={handleDragOver}
+        onDragEnter={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+      >
+        {isDragOver && (
+          <div className="mf-compose-drop-overlay" aria-hidden="true">
+            📎 Drop files to attach
+          </div>
+        )}
         <div className="mf-compose-header">
           <span className="mf-compose-title">{title}</span>
           <button className="mf-compose-close" onClick={handleDiscard} aria-label="Close compose">
@@ -470,6 +523,17 @@ export function ComposeModal({
           >
             📎
           </button>
+          {onSendLater && (
+            <button
+              className="mf-compose-schedule-btn"
+              type="button"
+              onClick={() => setShowSchedule((v) => !v)}
+              aria-label="Send later"
+              title="Schedule send"
+            >
+              ⏰
+            </button>
+          )}
           <input
             ref={fileInputRef}
             type="file"
@@ -484,6 +548,24 @@ export function ComposeModal({
             </span>
           )}
         </div>
+        {showSchedule && onSendLater && (
+          <div className="mf-schedule-picker">
+            <input
+              type="datetime-local"
+              className="mf-schedule-input"
+              value={scheduleTime}
+              min={new Date(Date.now() + 60_000).toISOString().slice(0, 16)}
+              onChange={(e) => setScheduleTime(e.target.value)}
+            />
+            <button
+              className="mf-schedule-confirm"
+              disabled={!scheduleTime || !to.trim()}
+              onClick={handleSendLater}
+            >
+              Schedule send
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

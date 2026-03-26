@@ -53,6 +53,7 @@ const SNOOZE_KEY = "mailframe-snoozed";
 const LIST_WIDTH_KEY = "mailframe-list-width";
 const SIGNATURE_KEY = "mailframe-signature";
 const DRAFT_KEY = "mailframe-draft";
+const SCHEDULED_KEY = "mailframe-scheduled";
 
 type SnoozedEntry = { id: string; wakeAt: number };
 
@@ -151,6 +152,18 @@ export function App() {
   // Undo send
   type PendingSend = { payload: SendPayload; timerId: ReturnType<typeof setTimeout> };
   const [pendingSend, setPendingSend] = useState<PendingSend | null>(null);
+
+  // Scheduled sends
+  type ScheduledSend = { id: string; payload: SendPayload; scheduledAt: number };
+  const [scheduledSends, setScheduledSends] = useState<ScheduledSend[]>(() => {
+    try { return JSON.parse(localStorage.getItem(SCHEDULED_KEY) ?? "[]") as ScheduledSend[]; }
+    catch { return []; }
+  });
+  const scheduledSendsRef = useRef(scheduledSends);
+  scheduledSendsRef.current = scheduledSends;
+
+  // Quick reply
+  const [quickReply, setQuickReply] = useState("");
 
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -273,6 +286,7 @@ export function App() {
     setDetail(null);
     setDetailLoading(false);
     setExpandedThreadKey(null);
+    setQuickReply("");
   }, [provider, activeFolderId]);
 
   // Keep message-id ref in sync for polling
@@ -332,6 +346,23 @@ export function App() {
     }, 60_000);
     return () => clearInterval(timer);
   }, [activeFolderId, search, provider, providerId]);
+
+  // Fire scheduled sends
+  useEffect(() => {
+    function checkScheduled() {
+      const now = Date.now();
+      const due = scheduledSendsRef.current.filter((s) => s.scheduledAt <= now);
+      if (!due.length) return;
+      const remaining = scheduledSendsRef.current.filter((s) => s.scheduledAt > now);
+      setScheduledSends(remaining);
+      try { localStorage.setItem(SCHEDULED_KEY, JSON.stringify(remaining)); } catch { /* ignore */ }
+      for (const s of due) provider.sendMessage?.(s.payload);
+      showToast(`${due.length} scheduled message${due.length > 1 ? "s" : ""} sent`);
+    }
+    checkScheduled();
+    const timer = setInterval(checkScheduled, 30_000);
+    return () => clearInterval(timer);
+  }, [provider]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Load detail
   useEffect(() => {
@@ -589,6 +620,16 @@ export function App() {
     setToast("Sending in 7s…");
   }
 
+  function handleSendLater(payload: SendPayload, scheduledAt: number) {
+    setCompose(null);
+    const entry = { id: crypto.randomUUID(), payload, scheduledAt };
+    const updated = [...scheduledSendsRef.current, entry];
+    setScheduledSends(updated);
+    try { localStorage.setItem(SCHEDULED_KEY, JSON.stringify(updated)); } catch { /* ignore */ }
+    const when = new Date(scheduledAt).toLocaleString(undefined, { dateStyle: "short", timeStyle: "short" });
+    showToast(`Scheduled for ${when}`);
+  }
+
   function handleUndoSend() {
     if (!pendingSend) return;
     clearTimeout(pendingSend.timerId);
@@ -757,6 +798,7 @@ export function App() {
           initialSubject={compose.type !== "new" ? compose.subject : ""}
           initialBody={compose.type === "forward" ? compose.body.join("\n\n") : ""}
           onSend={handleSend}
+          onSendLater={provider.sendMessage ? handleSendLater : undefined}
           onClose={() => setCompose(null)}
         />
       )}
@@ -1363,6 +1405,45 @@ export function App() {
                 {detail.body.map((paragraph, i) => (
                   <p key={i}>{paragraph}</p>
                 ))}
+              </div>
+            )}
+
+            {provider.sendMessage && (
+              <div className="mf-quick-reply">
+                <div className="mf-quick-reply-label">Reply to {detail.sender}</div>
+                <textarea
+                  className="mf-quick-reply-input"
+                  placeholder="Write a quick reply…"
+                  value={quickReply}
+                  rows={3}
+                  onChange={(e) => setQuickReply(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && (e.ctrlKey || e.metaKey) && quickReply.trim()) {
+                      e.preventDefault();
+                      handleSend({ to: detail.sender, subject: `Re: ${detail.subject}`, body: quickReply.trim() });
+                      setQuickReply("");
+                    }
+                  }}
+                />
+                <div className="mf-quick-reply-footer">
+                  <button
+                    className="mf-quick-reply-send"
+                    disabled={!quickReply.trim()}
+                    onClick={() => {
+                      handleSend({ to: detail.sender, subject: `Re: ${detail.subject}`, body: quickReply.trim() });
+                      setQuickReply("");
+                    }}
+                  >
+                    Send
+                  </button>
+                  <button
+                    className="mf-quick-reply-expand"
+                    onClick={() => { handleReply(); setQuickReply(""); }}
+                  >
+                    Full reply ↗
+                  </button>
+                  <span className="mf-quick-reply-hint">Ctrl+Enter to send</span>
+                </div>
               </div>
             )}
 
