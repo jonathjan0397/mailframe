@@ -116,14 +116,14 @@ app.post("/messages/star", async (req, res) => {
 
 // POST /messages/send
 app.post("/messages/send", async (req, res) => {
-  const { to, cc, bcc, subject, body, replyToId, attachments } = req.body as {
+  const { to, cc, bcc, subject, body, bodyHtml, replyToId, attachments } = req.body as {
     to: string; cc?: string; bcc?: string; subject: string; body: string;
-    replyToId?: string;
+    bodyHtml?: string; replyToId?: string;
     attachments?: Array<{ filename: string; mimeType: string; data: string }>;
   };
   if (!to || !body) return err(res, 400, "to and body required.");
   try {
-    await sendMail({ to, cc, bcc, subject: subject ?? "(No subject)", body, replyToId, attachments });
+    await sendMail({ to, cc, bcc, subject: subject ?? "(No subject)", body, bodyHtml, replyToId, attachments });
     res.json({ ok: true });
   } catch (e) {
     console.error(e);

@@ -12,6 +12,7 @@ export async function sendMail(payload: {
   bcc?: string;
   subject: string;
   body: string;
+  bodyHtml?: string;
   replyToId?: string;
   attachments?: AttachmentItem[];
 }) {
@@ -32,6 +33,7 @@ export async function sendMail(payload: {
     bcc: payload.bcc || undefined,
     subject: payload.subject,
     text: payload.body,
+    html: payload.bodyHtml || undefined,
     attachments: payload.attachments?.map((a) => ({
       filename: a.filename,
       contentType: a.mimeType,

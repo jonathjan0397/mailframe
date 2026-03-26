@@ -75,6 +75,7 @@ export const apiProvider: MailProvider = {
         bcc: payload.bcc,
         subject: payload.subject,
         body: payload.body,
+        bodyHtml: payload.bodyHtml,
         replyToId: payload.replyToId,
         attachments: payload.attachments,
       }),

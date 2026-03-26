@@ -1,5 +1,29 @@
 # Changelog
 
+## 1.10.0 — 2026-03-26
+
+Rich-text compose editor and conversation thread view.
+
+### Added
+- **Rich-text compose editor** — `ComposeModal` replaces the plain `<textarea>` with a `contenteditable` div; formatting toolbar provides Bold (Ctrl+B), Italic (Ctrl+I), Underline (Ctrl+U), Strikethrough, Bullet list, Numbered list, Insert link, Remove link, and Clear formatting buttons; `execFormat()` wraps `document.execCommand`; toolbar uses `onMouseDown` + `e.preventDefault()` to avoid losing editor selection focus
+- **HTML email send** — `SendPayload.bodyHtml?` carries the rich HTML body; SMTP transport passes it as nodemailer `html:`; plain-text `body` (from `innerText`) remains as fallback; `POST /messages/send` and `api-provider` forward `bodyHtml`
+- **Paste sanitization** — `handleEditorPaste` intercepts paste events, sanitizes HTML via `DOMPurify` (restricted allowlist), falls back to plain text insert
+- **Rich draft save/restore** — `DraftData.bodyHtml` persists `innerHTML` to localStorage alongside plain `body`; draft restore renders `bodyHtml` directly via `DOMPurify.sanitize`
+- **Signature as HTML** — `buildInitialHtml()` converts plain-text signature and initial body to HTML with `<br>` line breaks; prepends empty `<p>` for cursor placement; applied only to fresh compositions
+- **Conversation thread view** — thread toggle button (⋮≡) in message list header; when active, messages are grouped by normalized subject (Re:/Fwd:/Fw: prefixes stripped); each row shows participant senders, thread count badge, and latest timestamp; `buildThreadGroups()` + `normalizeSubject()` helpers
+- **Thread conversation panel** — when a thread is selected and contains more than one message, a collapsible panel in the reading pane lists all thread messages with sender, subject, and timestamp; clicking any row loads that message's detail
+
+### Changed
+- `src/features/mail/provider.ts` — `SendPayload` gains `bodyHtml?: string`
+- `server/src/smtp.ts` — `sendMail` accepts and forwards `bodyHtml` as nodemailer `html:`
+- `server/src/index.ts` — `POST /messages/send` extracts and passes `bodyHtml`
+- `src/features/mail/providers/api-provider.ts` — `sendMessage` forwards `bodyHtml`
+- `src/app/ComposeModal.tsx` — full rewrite: `contenteditable` editor, formatting toolbar, `buildInitialHtml`, `DraftData.bodyHtml`, `execFormat`, keyboard shortcuts, paste handler
+- `src/app/App.tsx` — `ThreadGroup` type, `normalizeSubject`, `buildThreadGroups` helpers; `threadView` + `expandedThreadKey` state; `threadGroups` useMemo; conditional virtualizer count; thread toggle button; thread row rendering; thread conversation panel in reading pane
+- `src/app/global.css` — rich-text toolbar styles (`.mf-compose-toolbar`, `.mf-toolbar-btn`, `.mf-toolbar-sep`), compose editor styles (`.mf-compose-editor`), thread toggle (`.mf-thread-toggle`), thread count badge (`.mf-thread-count`), thread panel (`.mf-thread-panel`, `.mf-thread-list`, `.mf-thread-item`)
+
+---
+
 ## 1.9.0 — 2026-03-26
 
 Real message preview, folder management, advanced search filters, tab title badge, browser notifications.

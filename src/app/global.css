@@ -1417,3 +1417,196 @@ kbd {
     box-shadow: none;
   }
 }
+
+/* ── Rich-text compose toolbar ─────────────────────────────────── */
+.mf-compose-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px 12px;
+  border-bottom: 1px solid var(--mf-color-border);
+  background: var(--mf-color-surface);
+  flex-shrink: 0;
+}
+
+.mf-toolbar-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  height: 28px;
+  padding: 0 4px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: none;
+  color: var(--mf-color-text);
+  font-size: 13px;
+  cursor: pointer;
+  line-height: 1;
+}
+
+.mf-toolbar-btn:hover {
+  background: var(--mf-color-hover);
+  border-color: var(--mf-color-border);
+}
+
+.mf-toolbar-btn:active {
+  background: var(--mf-color-selected);
+}
+
+.mf-toolbar-sep {
+  display: inline-block;
+  width: 1px;
+  height: 18px;
+  background: var(--mf-color-border);
+  margin: 0 4px;
+  align-self: center;
+  flex-shrink: 0;
+}
+
+/* ── Rich-text contenteditable editor ─────────────────────────── */
+.mf-compose-editor {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px 16px;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--mf-color-text);
+  background: var(--mf-color-surface);
+  outline: none;
+  min-height: 120px;
+  word-break: break-word;
+}
+
+.mf-compose-editor:empty::before {
+  content: attr(data-placeholder);
+  color: var(--mf-color-text-muted, #999);
+  pointer-events: none;
+}
+
+.mf-compose-editor p {
+  margin: 0 0 4px;
+}
+
+.mf-compose-editor ul,
+.mf-compose-editor ol {
+  margin: 4px 0;
+  padding-left: 24px;
+}
+
+.mf-compose-editor a {
+  color: var(--mf-color-accent);
+}
+
+/* ── Thread view toggle button ─────────────────────────────────── */
+.mf-thread-toggle {
+  padding: 3px 8px;
+  border: 1px solid var(--mf-color-border);
+  border-radius: 4px;
+  background: none;
+  color: var(--mf-color-text-secondary, var(--mf-color-text));
+  font-size: 12px;
+  cursor: pointer;
+  line-height: 1;
+  white-space: nowrap;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.mf-thread-toggle:hover {
+  background: var(--mf-color-hover);
+}
+
+.mf-thread-toggle.active {
+  background: var(--mf-color-accent);
+  border-color: var(--mf-color-accent);
+  color: #fff;
+}
+
+/* ── Thread count badge (on message subject in thread view) ───── */
+.mf-thread-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: 6px;
+  padding: 0 5px;
+  min-width: 18px;
+  height: 16px;
+  border-radius: 8px;
+  background: var(--mf-color-accent);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 600;
+  vertical-align: middle;
+}
+
+/* ── Thread conversation panel (in reading pane) ──────────────── */
+.mf-thread-panel {
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--mf-color-border);
+  background: var(--mf-color-surface-alt, var(--mf-color-bg));
+}
+
+.mf-thread-panel-label {
+  padding: 6px 16px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--mf-color-text-secondary, var(--mf-color-text));
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.mf-thread-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 160px;
+  overflow-y: auto;
+}
+
+.mf-thread-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 16px;
+  cursor: pointer;
+  font-size: 13px;
+  border-top: 1px solid var(--mf-color-border);
+}
+
+.mf-thread-item:hover {
+  background: var(--mf-color-hover);
+}
+
+.mf-thread-item.selected {
+  background: var(--mf-color-selected);
+}
+
+.mf-thread-item.unread .mf-thread-item-sender {
+  font-weight: 700;
+}
+
+.mf-thread-item-sender {
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 140px;
+  flex-shrink: 0;
+}
+
+.mf-thread-item-subject {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--mf-color-text-secondary, var(--mf-color-text));
+  font-size: 12px;
+}
+
+.mf-thread-item-ts {
+  white-space: nowrap;
+  color: var(--mf-color-text-secondary, var(--mf-color-text));
+  font-size: 11px;
+  flex-shrink: 0;
+}
