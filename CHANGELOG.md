@@ -1,19 +1,36 @@
 # Changelog
 
-## 1.17.0-beta.1 — 2026-03-26 — Beta Testing Phase
+## 1.17.0 — 2026-03-26
 
-Attachment preview system, image thumbnails, and provider persistence.
+Feature-complete v1 release. Covers the full standard webmail feature set plus performance, reliability, and UX polish. Future work will be incremental patch/minor releases leading toward a major 2.0 feature update.
 
 ### Added
-- **Attachment image thumbnails** — image attachments auto-load as 48×48 thumbnails inline in the attachment list when a message is opened; clicking a thumbnail opens the full preview modal
-- **Full-screen attachment preview modal** — "👁 Preview" button for images, PDFs, and text/JSON files opens a centered overlay modal; images render with `<img>`, PDFs in an `<iframe>`, text/JSON in a scrollable `<pre>`; click outside or ✕ to dismiss
+- **Attachment image thumbnails** — image attachments auto-load as 48×48 thumbnails inline in the attachment list; clicking opens the full preview modal
+- **Full-screen attachment preview modal** — images, PDFs, and text files render in a centred overlay; click outside or ✕ to dismiss
+- **Quoted reply / reply-all / forward** — original message body included below the compose area with proper attribution header
+- **Mobile responsive layout** — full-screen compose/preview on small screens, touch-friendly tap targets, iOS font-size fix, FAB compose button in reading pane
+- **Dark mode — System (Auto)** — follows OS `prefers-color-scheme`; toggles automatically when the OS theme changes
+- **Contact autocomplete** — custom filtered dropdown on To / CC / BCC fields; keyboard navigable (↑↓ Enter Tab Esc)
+- **Remember me (30-day session)** — server-side extended session; password never stored in the browser; public computer warning shown
+- **Desktop notifications** — service-worker-based with click-to-focus; deduped by tag; fallback to `Notification` API when SW unavailable
+- **In-app new-mail popup cards** — slides in from bottom-right showing sender + subject; two-tone Web Audio chime; click to open message; auto-dismisses after 6 s
+- **IMAP performance** — single connection + batched `imap_fetch_overview()` range call; ~60 IMAP commands → ~12 per page load
+- **AbortController on all fetches** — rapid folder/message switching cancels in-flight requests; no stale-data overwrites
+- **Reconnect / retry banner** — red banner when API is unreachable with 15 s auto-retry and Retry Now button; `navigator.onLine` event triggers immediate re-fetch
+- **Draft autosave fix** — subject and address fields pass new value directly into `saveDraft()` override; last-typed character always saved
+- **Keyboard shortcuts** — `j`/`k` next/previous message; `/` focus search; `?` opens help dialog listing all 12 shortcuts
+- **Message source viewer** — Source button opens raw RFC 822 source (full headers + body) in a monospace modal; Download .eml saves locally
+- **Outgoing attachments** — compose attachments now sent via `multipart/mixed`; previously silently dropped
+- **Phone image attachments** — unnamed binary parts get fallback filenames; CID inline images exposed as downloadable attachments; `cid:` references in HTML body replaced with inline `data:` URIs
+- **Image size cap** — images in the reading pane capped at 400 × 400 px, aspect ratio preserved
 
 ### Fixed
-- **Provider selection not persisted** — switching to the bridge server in Settings now saves to `localStorage` (`mailframe-provider`) and is restored on page refresh; previously always defaulted back to Demo on reload
+- **Inbox empty until refresh** — mailbox fetch fired before authentication completed; `authState` added to effect dependencies
+- **Folder listing broke message fetch** — `imap_status()` re-selected a different mailbox; message fetch now runs before folder enumeration
+- **Provider defaulting to Demo** — `providerId` now initialised from `localStorage` on mount
 
-### Changed
-- `App.tsx` — `providerId` initialised from `localStorage`; `onProviderChange` wrapper persists selection; `imageThumbs` state auto-fetches all image attachments when detail loads; preview modal JSX added to render tree
-- `global.css` — added `.mf-att-thumb`, `.mf-att-preview`, `.mf-preview-overlay`, `.mf-preview-modal`, `.mf-preview-header`, `.mf-preview-body`, `.mf-preview-image`, `.mf-preview-iframe`, `.mf-preview-text`
+### Performance
+- Extracted `useMailbox` and `useMessageDetail` custom hooks to `src/app/hooks/`
 
 ---
 

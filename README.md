@@ -2,9 +2,7 @@
 
 An extensible, backend-agnostic IMAP webmail frontend with a drop-in theming system.
 
-**Current version:** 1.17.0-beta.1 — Beta Testing Phase
-
-> **Beta Notice:** MailFrame is currently in active beta testing. Core features are stable and in use on live deployments. Feedback, bug reports, and pull requests are welcome.
+**Current version:** 1.17.0
 
 ## Overview
 
@@ -44,9 +42,9 @@ MailFrame is a production-quality webmail shell built in React + TypeScript. It 
 | Mark all read | v1.16 |
 | Inline image rendering (`cid:` references in HTML emails) | v1.16 |
 | PWA / installable (manifest + service worker) | v1.16 |
-| Attachment thumbnail previews (inline mini-preview for images) | v1.17-beta |
-| Full-screen attachment preview modal (images, PDF, text) | v1.17-beta |
-| Provider selection persisted across page refreshes | v1.17-beta |
+| Attachment thumbnail previews (inline mini-preview for images) | v1.17.0 |
+| Full-screen attachment preview modal (images, PDF, text) | v1.17.0 |
+| Provider selection persisted across page refreshes | v1.17.0 |
 
 ## Quick Start — Demo Mode
 
