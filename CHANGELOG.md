@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.6.0 — 2026-03-26
+
+HTML email rendering, load-more pagination, `.gitattributes`, GitHub release.
+
+### Added
+- **HTML email rendering** — server now fetches HTML MIME parts (1, 1.1, 1.2, 2) in addition to plain text; frontend renders HTML emails using `DOMPurify.sanitize()` with an explicit allowlist of safe tags and attributes; plain-text fallback for emails with no HTML part
+- **Load more pagination** — "Load more" button appears at the bottom of the message list when `hasNextPage` is true; appends the next 25 messages without resetting the list; `page` state tracks current depth; disabled during load
+- **`.gitattributes`** — enforces LF line endings on commit for all text files; eliminates CRLF warnings on Windows
+- `bodyHtml?: string` field added to `MailMessageDetail` type; both the bridge server response and frontend type are updated
+
+### Changed
+- `server/src/imap.ts` — `getMessage` now fetches parts `["1", "1.1", "1.2", "2", "TEXT"]` and uses a heuristic (`<!doctype`, `<html`, `<body`, `<p>`, `<div`, `<table`) to separate HTML from plain-text parts; returns `bodyHtml` when found
+- `src/app/App.tsx` — mailbox effect now resets `page` and `hasNextPage` on context change; `handleLoadMore` appends without re-fetching existing messages
+- Reading pane switches between `mf-pane-html` (HTML emails) and `mf-pane-body` (plain text) based on `bodyHtml` presence
+
+---
+
 ## 1.5.0 — 2026-03-26
 
 Virtualized message list, loading/error states, unit test suite, full README.

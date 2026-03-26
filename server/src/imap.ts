@@ -133,8 +133,10 @@ export async function getMessage(uid: number, mailbox: string) {
   try {
     const lock = await client.getMailboxLock(mailbox);
     try {
+      // Fetch common text and HTML MIME parts
       const msg = await client.fetchOne(`${uid}`, {
-        uid: true, envelope: true, flags: true, bodyParts: ["1", "1.1", "TEXT"],
+        uid: true, envelope: true, flags: true,
+        bodyParts: ["1", "1.1", "1.2", "2", "TEXT"],
       }, { uid: true });
 
       if (!msg) throw new Error("Message not found.");
@@ -146,21 +148,32 @@ export async function getMessage(uid: number, mailbox: string) {
       const subject = msg.envelope?.subject ?? "(No subject)";
       const timestamp = formatTimestamp(msg.envelope?.date);
 
-      // Extract body text
+      // Separate HTML and plain-text parts
       let bodyText = "";
+      let bodyHtml = "";
       for (const [, content] of msg.bodyParts ?? new Map()) {
-        const text = content.toString("utf8");
-        if (text.trim()) { bodyText = text; break; }
+        const raw = content.toString("utf8").trim();
+        if (!raw) continue;
+        const lower = raw.slice(0, 512).toLowerCase();
+        const looksHtml = lower.includes("<!doctype") || lower.includes("<html") ||
+                          lower.includes("<body") || lower.includes("<p>") ||
+                          lower.includes("<div") || lower.includes("<table");
+        if (looksHtml && !bodyHtml) {
+          bodyHtml = raw;
+        } else if (!looksHtml && !bodyText) {
+          bodyText = raw;
+        }
       }
 
       const paragraphs = bodyText.trim()
         ? bodyText.split(/\n\s*\n/).map((p) => p.replace(/\s+/g, " ").trim()).filter(Boolean)
-        : ["Message body could not be extracted."];
+        : bodyHtml ? [] : ["Message body could not be extracted."];
 
       return {
         id: encodeMessageId(uid, mailbox),
         sender, subject, timestamp,
         body: paragraphs,
+        bodyHtml: bodyHtml || undefined,
       };
     } finally {
       lock.release();
