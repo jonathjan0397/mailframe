@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import DOMPurify from "dompurify";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { applyTheme } from "../themes/tokens";
 import { themeRegistry } from "../themes/registry";
@@ -29,6 +30,9 @@ export function App() {
   const [compose, setCompose] = useState<ComposeMode | null>(null);
   const [mailboxLoading, setMailboxLoading] = useState(false);
   const [mailboxError, setMailboxError] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
+  const [hasNextPage, setHasNextPage] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -57,16 +61,19 @@ export function App() {
     setDetailLoading(false);
   }, [provider, activeFolderId]);
 
-  // Load mailbox
+  // Load mailbox (always page 1 on context change)
   useEffect(() => {
     let cancelled = false;
     setMailboxLoading(true);
     setMailboxError(null);
-    provider.getMailboxSnapshot({ folderId: activeFolderId, query: search })
+    setHasNextPage(false);
+    setPage(1);
+    provider.getMailboxSnapshot({ folderId: activeFolderId, query: search, page: 1 })
       .then((snapshot) => {
         if (cancelled) return;
         setFolders(snapshot.folders);
         setMessages(snapshot.messages);
+        setHasNextPage(snapshot.meta?.hasNextPage ?? false);
         setMailboxLoading(false);
       })
       .catch((e: unknown) => {
@@ -105,6 +112,19 @@ export function App() {
   function handleSearch(value: string) {
     if (searchTimer.current) clearTimeout(searchTimer.current);
     searchTimer.current = setTimeout(() => setSearch(value), 250);
+  }
+
+  function handleLoadMore() {
+    const nextPage = page + 1;
+    setLoadingMore(true);
+    provider.getMailboxSnapshot({ folderId: activeFolderId, query: search, page: nextPage })
+      .then((snapshot) => {
+        setMessages((prev) => [...prev, ...snapshot.messages]);
+        setHasNextPage(snapshot.meta?.hasNextPage ?? false);
+        setPage(nextPage);
+        setLoadingMore(false);
+      })
+      .catch(() => setLoadingMore(false));
   }
 
   function removeMessages(ids: string[]) {
@@ -437,6 +457,20 @@ export function App() {
             </div>
           </ul>
         )}
+
+        {/* Load more */}
+        {hasNextPage && !mailboxLoading && (
+          <div className="mf-load-more">
+            <button
+              className="mf-load-more-btn"
+              onClick={handleLoadMore}
+              disabled={loadingMore}
+              aria-busy={loadingMore}
+            >
+              {loadingMore ? "Loading…" : "Load more"}
+            </button>
+          </div>
+        )}
       </section>
 
       {/* Reading pane */}
@@ -490,15 +524,42 @@ export function App() {
                 Delete
               </button>
             </div>
-            <div
-              className="mf-pane-body"
-              role="article"
-              aria-label={detail.subject}
-            >
-              {detail.body.map((paragraph, i) => (
-                <p key={i}>{paragraph}</p>
-              ))}
-            </div>
+            {detail.bodyHtml ? (
+              <div
+                className="mf-pane-html"
+                role="article"
+                aria-label={detail.subject}
+                // eslint-disable-next-line react/no-danger
+                dangerouslySetInnerHTML={{
+                  __html: DOMPurify.sanitize(detail.bodyHtml, {
+                    ALLOWED_TAGS: [
+                      "a", "b", "blockquote", "br", "caption", "code", "col", "colgroup",
+                      "dd", "del", "div", "dl", "dt", "em", "figcaption", "figure",
+                      "h1", "h2", "h3", "h4", "h5", "h6", "hr", "i", "img", "ins",
+                      "li", "mark", "ol", "p", "pre", "q", "s", "small", "span",
+                      "strong", "sub", "sup", "table", "tbody", "td", "tfoot", "th",
+                      "thead", "tr", "u", "ul",
+                    ],
+                    ALLOWED_ATTR: [
+                      "href", "src", "alt", "title", "class", "style",
+                      "width", "height", "align", "valign", "colspan", "rowspan",
+                      "cellpadding", "cellspacing", "border", "bgcolor",
+                    ],
+                    FORCE_BODY: true,
+                  }),
+                }}
+              />
+            ) : (
+              <div
+                className="mf-pane-body"
+                role="article"
+                aria-label={detail.subject}
+              >
+                {detail.body.map((paragraph, i) => (
+                  <p key={i}>{paragraph}</p>
+                ))}
+              </div>
+            )}
           </>
         )}
       </main>

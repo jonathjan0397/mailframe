@@ -1,6 +1,6 @@
 {
   "name": "mailframe",
-  "version": "1.5.0",
+  "version": "1.6.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@tanstack/react-virtual": "^3.13.23",
+    "dompurify": "^3.3.3",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },
@@ -19,6 +20,7 @@
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
     "@testing-library/user-event": "^14.6.1",
+    "@types/dompurify": "^3.0.5",
     "@types/react": "^18.3.1",
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.1",

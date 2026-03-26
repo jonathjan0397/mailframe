@@ -21,6 +21,8 @@ export type MailMessageDetail = {
   subject: string;
   timestamp: string;
   body: string[];
+  /** Sanitized HTML body, if the message contains an HTML part. */
+  bodyHtml?: string;
 };
 
 export type MailboxSnapshot = {
