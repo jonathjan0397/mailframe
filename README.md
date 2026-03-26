@@ -2,11 +2,34 @@
 
 An extensible, backend-agnostic IMAP webmail frontend with a drop-in theming system.
 
+**Current version:** 1.12.0
+
 ## Overview
 
 MailFrame is a production-quality webmail shell built in React + TypeScript. It connects to any IMAP/SMTP-compatible mail server through a thin bridge server, and swaps visual styles through a token-based theming system — no component changes required.
 
 **Bundled themes:** Lumen (clean, blue accent) · Aurora (rich, purple accent)
+
+## Features
+
+| Feature | Since |
+|---|---|
+| App shell — sidebar, message list, reading pane | v1.1 |
+| Provider contract (read + write) | v1.2 |
+| Demo provider (no backend required) | v1.1 |
+| Token-based theme system | v1.4 |
+| IMAP/SMTP bridge server | v1.8 |
+| Compose with rich-text toolbar (bold, italic, underline, lists) | v1.10 |
+| Thread view (group by subject) | v1.10 |
+| Snooze messages (remind later / tomorrow / next weekday) | v1.11 |
+| Drag-to-folder | v1.11 |
+| Resizable message list pane | v1.11 |
+| Login page with per-user IMAP auth | v1.12 |
+| Session tokens (httpOnly cookie, configurable TTL) | v1.12 |
+| Admin server config (`mailframe.config.json`) | v1.12 |
+| Attachment download | v1.9 |
+| Message search | v1.9 |
+| Folder management (create, delete, empty) | v1.9 |
 
 ## Quick Start — Demo Mode
 
@@ -18,56 +41,100 @@ npm run dev
 # → http://localhost:5173
 ```
 
-## Connecting to a Real Mail Account
+Switch to **Settings → Connection → Demo** if the API provider was previously selected.
 
-MailFrame ships with a standalone bridge server that speaks IMAP/SMTP.
+## Deploying the Bridge Server
 
-**1. Configure the bridge server**
+MailFrame ships with a standalone bridge server (`server/`) that speaks IMAP/SMTP and issues session tokens.
 
-```bash
-cd server
-cp .env.example .env
-# edit .env with your IMAP/SMTP credentials
+### 1. Configure server settings
+
+Create `server/mailframe.config.json` (the bridge reads this at startup):
+
+```json
+{
+  "imap": {
+    "host": "mail.yourserver.com",
+    "port": 993,
+    "secure": true,
+    "tls": { "rejectUnauthorized": true }
+  },
+  "smtp": {
+    "host": "mail.yourserver.com",
+    "port": 587,
+    "secure": false,
+    "requireTls": false
+  },
+  "app": {
+    "name": "MailFrame",
+    "sessionTtlHours": 24,
+    "allowedDomains": ["yourcompany.com"]
+  }
+}
 ```
 
-```ini
-# server/.env
-IMAP_HOST=imap.yourprovider.com
-IMAP_PORT=993
-IMAP_SECURE=true
-IMAP_USER=you@example.com
-IMAP_PASS=yourpassword
+| Field | Description |
+|---|---|
+| `imap.*` | IMAP connection — host, port, TLS settings |
+| `smtp.*` | SMTP connection — host, port, STARTTLS settings |
+| `app.name` | Displayed on the login page |
+| `app.sessionTtlHours` | How long a login session lasts |
+| `app.allowedDomains` | Restrict login to these email domains. Empty array = allow all. |
 
-SMTP_HOST=smtp.yourprovider.com
-SMTP_PORT=587
-SMTP_SECURE=false
-SMTP_USER=you@example.com
-SMTP_PASS=yourpassword
-SMTP_FROM=Your Name <you@example.com>
-```
-
-**2. Start the bridge server**
+### 2. Build and start the server
 
 ```bash
 cd server
 npm install
-npm start
+npm run build
+node dist/index.js
 # → http://localhost:4010
 ```
 
-**3. Configure the frontend**
+For production use PM2 or a similar process manager:
 
 ```bash
-# In the repo root:
-cp .env.example .env.local
-# VITE_API_BASE_URL=http://localhost:4010   (already set)
+npm install -g pm2
+pm2 start dist/index.js --name mailframe-api
+pm2 save
 ```
 
-**4. Switch the data source**
+### 3. Configure the Apache reverse proxy
 
-Open **Settings** (⚙ gear icon in the sidebar) → Connection → select **Bridge server (IMAP/SMTP)**.
+The frontend calls `/api/*` — Apache must proxy those requests to the bridge. Add to your VirtualHost config (not `.htaccess`):
 
-The frontend hot-reloads the provider without a page refresh.
+```apache
+ProxyPass        /api/ http://localhost:4010/
+ProxyPassReverse /api/ http://localhost:4010/
+```
+
+### 4. Build and deploy the frontend
+
+```bash
+# From repo root:
+VITE_API_BASE_URL=/api npm run build
+# dist/ is ready to upload to /mailframe/ on your web server
+```
+
+Or use the deploy script (see [Deploy Script](#deploy-script) below).
+
+### 5. Log in
+
+Navigate to your hosted URL. MailFrame shows a login page — enter your email address and IMAP password. The server validates credentials against the IMAP host in `mailframe.config.json` and issues a session cookie.
+
+## Deploy Script
+
+`deploy/deploy.js` automates building and publishing to the hosted server via FTP.
+
+```bash
+# Prerequisites: set FTP credentials in environment or ~/.claude/settings.json
+# FTP_HOST, FTP_USER, FTP_PASS, FTP_ROOT
+
+node deploy/deploy.js              # deploy showcase + all registered projects
+node deploy/deploy.js showcase     # showcase landing page only
+node deploy/deploy.js mailframe    # frontend + bridge server
+node deploy/deploy.js mailframe-api  # bridge server only
+```
 
 ## Adding a Theme
 
@@ -123,41 +190,55 @@ export const themeRegistry: ThemeTokens[] = [
 ];
 ```
 
-The theme appears in **Settings → Appearance** immediately.
+The theme appears in **Settings → Appearance** and on the login page immediately.
 
 ## Architecture
 
 ```
 MailFrame Frontend (React + TypeScript + Vite)
-  ├── src/app/           UI shell (App, ComposeModal, SettingsPanel)
+  ├── src/app/           UI shell (App, LoginPage, ComposeModal, SettingsPanel)
   ├── src/themes/        Token system + built-in themes + registry
   ├── src/features/mail/ Provider contract + demo/API providers
   └── src/lib/           Shared types
 
 MailFrame Bridge Server (Node.js + Express)
-  ├── src/imap.ts        imapflow IMAP client (one connection per request)
-  ├── src/smtp.ts        nodemailer SMTP transport
+  ├── mailframe.config.json  Admin server/app settings
+  ├── src/config.ts      Config loader (falls back to env vars)
+  ├── src/session.ts     In-memory session store (UUID tokens, hourly GC)
+  ├── src/imap.ts        imapflow IMAP client (per-user credentials)
+  ├── src/smtp.ts        nodemailer SMTP transport (per-user credentials)
   ├── src/encode.ts      Opaque message ID encoding (uid:base64url(mailbox))
-  └── src/index.ts       REST API (GET /mailbox, GET /messages/:id, POST /messages/*)
+  └── src/index.ts       REST API + auth endpoints
+```
+
+### Auth Flow
+
+```
+Browser          Frontend        Bridge Server       IMAP
+  │                │                  │                │
+  │  GET /mailframe/│                  │                │
+  │◄────────────────│                  │                │
+  │                 │                  │                │
+  │  POST /api/auth/login              │                │
+  │─────────────────────────────────►  │                │
+  │                 │         getFolders(creds)         │
+  │                 │                  │─────────────►  │
+  │                 │                  │◄─────────────  │
+  │◄─────────────────────────────────  │                │
+  │  Set-Cookie: mf_session=<token>    │                │
+  │                                    │                │
+  │  GET /api/mailbox (with cookie)    │                │
+  │─────────────────────────────────►  │                │
+  │           requireAuth middleware   │                │
+  │                  │         getMailbox(creds, ...)   │
+  │                  │                  │─────────────► │
 ```
 
 ### Provider Contract
 
-Any backend that implements `MailProvider` (see `src/features/mail/provider.ts`) can
-power the frontend. Read methods are required; write methods are optional — the UI
-disables actions the provider does not support.
+Any backend that implements `MailProvider` (see `src/features/mail/provider.ts`) can power the frontend. Read methods are required; write methods are optional — the UI disables actions the provider does not support.
 
-```typescript
-type MailProvider = {
-  getMailboxSnapshot: (query?: MailboxQuery) => Promise<MailboxSnapshot>;
-  getMessageDetail:  (messageId: string)    => Promise<MailMessageDetail>;
-  moveMessages?:     (ids: string[], targetFolderId: string) => Promise<void>;
-  deleteMessages?:   (ids: string[])                         => Promise<void>;
-  markRead?:         (ids: string[], read: boolean)          => Promise<void>;
-  toggleStar?:       (id: string,   starred: boolean)        => Promise<void>;
-  sendMessage?:      (payload: SendPayload)                  => Promise<void>;
-};
-```
+See [docs/provider-contract.md](docs/provider-contract.md) for the full REST API specification.
 
 ## Development
 
@@ -166,8 +247,9 @@ type MailProvider = {
 | `npm run dev` | Start Vite dev server (frontend, port 5173) |
 | `npm run build` | Production build to `dist/` |
 | `npm test` | Run Vitest unit tests (frontend) |
-| `cd server && npm start` | Start bridge server (port 4010) |
+| `cd server && npm install && npm start` | Start bridge server (port 4010) |
 | `cd server && npm test` | Run Vitest unit tests (server) |
+| `node deploy/deploy.js` | Build and publish to hosted server via FTP |
 
 ## Requirements
 
