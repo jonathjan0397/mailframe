@@ -95,6 +95,27 @@ const SCHEDULED_KEY = "mailframe-scheduled";
 
 type SnoozedEntry = { id: string; wakeAt: number };
 
+type MailNotif = { id: string; sender: string; subject: string; msgId: string };
+
+function playNotifSound() {
+  try {
+    const ctx = new AudioContext();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    // Two-tone chime: high note then lower note
+    osc.type = "sine";
+    osc.frequency.setValueAtTime(1046, ctx.currentTime);        // C6
+    osc.frequency.setValueAtTime(784, ctx.currentTime + 0.12);  // G5
+    gain.gain.setValueAtTime(0.25, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.55);
+    osc.start(ctx.currentTime);
+    osc.stop(ctx.currentTime + 0.55);
+    osc.onended = () => ctx.close();
+  } catch { /* AudioContext not available */ }
+}
+
 function getSnoozed(): SnoozedEntry[] {
   try { return JSON.parse(localStorage.getItem(SNOOZE_KEY) ?? "[]") as SnoozedEntry[]; }
   catch { return []; }
@@ -199,6 +220,7 @@ export function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [newMessageCount, setNewMessageCount] = useState(0);
+  const [mailNotifs, setMailNotifs] = useState<MailNotif[]>([]);
   const [refreshToken, setRefreshToken] = useState(0);
   const [showKeyboardHelp, setShowKeyboardHelp] = useState(false);
   const [threadView, setThreadView] = useState(false);
@@ -489,6 +511,22 @@ export function App() {
           );
           if (incoming.length > 0) {
             setNewMessageCount((n) => n + incoming.length);
+            playNotifSound();
+            // In-app popup cards (bottom-right)
+            const notifs: MailNotif[] = incoming.slice(0, 5).map((m) => ({
+              id: `${m.id}-${Date.now()}`,
+              sender: m.sender,
+              subject: m.subject,
+              msgId: m.id,
+            }));
+            setMailNotifs((prev) => [...prev, ...notifs]);
+            // Auto-dismiss each after 6s
+            notifs.forEach((n) => {
+              setTimeout(() => {
+                setMailNotifs((prev) => prev.filter((x) => x.id !== n.id));
+              }, 6000);
+            });
+            // Browser desktop notification (background)
             if ("Notification" in window && Notification.permission === "granted") {
               const title = incoming.length === 1
                 ? incoming[0].sender
@@ -1132,6 +1170,45 @@ export function App() {
               )}
             </div>
           </div>
+        </div>
+      )}
+
+      {/* New-mail popup cards — bottom right */}
+      {mailNotifs.length > 0 && (
+        <div className="mf-notif-stack" aria-live="polite" aria-label="New messages">
+          {mailNotifs.map((n) => (
+            <div
+              key={n.id}
+              className="mf-notif-card"
+              role="button"
+              tabIndex={0}
+              onClick={() => {
+                setSelectedId(n.msgId);
+                setMailNotifs((prev) => prev.filter((x) => x.id !== n.id));
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  setSelectedId(n.msgId);
+                  setMailNotifs((prev) => prev.filter((x) => x.id !== n.id));
+                }
+              }}
+            >
+              <div className="mf-notif-icon">✉</div>
+              <div className="mf-notif-body">
+                <div className="mf-notif-sender">{n.sender}</div>
+                <div className="mf-notif-subject">{n.subject}</div>
+              </div>
+              <button
+                className="mf-notif-close"
+                aria-label="Dismiss"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setMailNotifs((prev) => prev.filter((x) => x.id !== n.id));
+                }}
+              >×</button>
+            </div>
+          ))}
         </div>
       )}
 

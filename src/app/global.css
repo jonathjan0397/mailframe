@@ -602,6 +602,78 @@ input {
 }
 .mf-schedule-confirm:disabled { opacity: 0.45; cursor: default; }
 
+/* ── New-mail popup cards ──────────────────────────────────────── */
+.mf-notif-stack {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  display: flex;
+  flex-direction: column-reverse;
+  gap: 10px;
+  z-index: 1100;
+  pointer-events: none;
+}
+.mf-notif-card {
+  pointer-events: all;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: 300px;
+  background: var(--mf-color-surface, #fff);
+  border: 1px solid var(--mf-color-border, #e0e0e0);
+  border-left: 4px solid var(--mf-color-accent, #1a73e8);
+  border-radius: var(--mf-radius-md, 8px);
+  box-shadow: 0 4px 16px rgba(0,0,0,0.18);
+  padding: 12px 10px 12px 12px;
+  cursor: pointer;
+  animation: mf-notif-in 0.22s cubic-bezier(0.22,1,0.36,1);
+  transition: box-shadow 0.15s;
+}
+.mf-notif-card:hover { box-shadow: 0 6px 20px rgba(0,0,0,0.24); }
+.mf-notif-icon {
+  font-size: 18px;
+  line-height: 1;
+  flex-shrink: 0;
+  margin-top: 1px;
+  color: var(--mf-color-accent, #1a73e8);
+}
+.mf-notif-body {
+  flex: 1;
+  min-width: 0;
+}
+.mf-notif-sender {
+  font-weight: 700;
+  font-size: var(--mf-font-size-sm, 13px);
+  color: var(--mf-color-text-primary, #202124);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mf-notif-subject {
+  font-size: var(--mf-font-size-sm, 12px);
+  color: var(--mf-color-text-secondary, #5f6368);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 2px;
+}
+.mf-notif-close {
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 18px;
+  line-height: 1;
+  color: var(--mf-color-text-secondary, #5f6368);
+  padding: 0 2px;
+  margin-top: -2px;
+}
+.mf-notif-close:hover { color: var(--mf-color-text-primary, #202124); }
+@keyframes mf-notif-in {
+  from { opacity: 0; transform: translateX(24px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
 /* Toast notification */
 .mf-toast {
   position: fixed;
@@ -1687,7 +1759,8 @@ kbd {
   .mf-settings-panel,
   .mf-settings-backdrop,
   .mf-kb-overlay,
-  .mf-toast { display: none !important; }
+  .mf-toast,
+  .mf-notif-stack { display: none !important; }
 
   html, body, #root { overflow: visible !important; height: auto !important; }
 
