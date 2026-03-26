@@ -489,14 +489,28 @@ export function App() {
           if (incoming.length > 0) {
             setNewMessageCount((n) => n + incoming.length);
             if ("Notification" in window && Notification.permission === "granted") {
-              const body = incoming
-                .slice(0, 3)
-                .map((m) => `${m.sender}: ${m.subject}`)
-                .join("\n");
-              new Notification(
-                `${incoming.length} new message${incoming.length !== 1 ? "s" : ""}`,
-                { body, icon: "/favicon.ico" },
-              );
+              const title = incoming.length === 1
+                ? incoming[0].sender
+                : `${incoming.length} new messages`;
+              const body = incoming.length === 1
+                ? incoming[0].subject
+                : incoming.slice(0, 3).map((m) => `${m.sender}: ${m.subject}`).join("\n");
+              const icon = `${import.meta.env.BASE_URL}favicon.ico`;
+              const tag = "mailframe-new-mail";
+              const data = { url: window.location.href };
+              if ("serviceWorker" in navigator) {
+                navigator.serviceWorker.ready
+                  .then((reg) => reg.showNotification(title, { body, icon, tag, data }))
+                  .catch(() => {
+                    const n = new Notification(title, { body, icon, tag });
+                    n.onclick = () => { window.focus(); n.close(); };
+                    setTimeout(() => n.close(), 8000);
+                  });
+              } else {
+                const n = new Notification(title, { body, icon, tag });
+                n.onclick = () => { window.focus(); n.close(); };
+                setTimeout(() => n.close(), 8000);
+              }
             }
           }
           setFolders(snapshot.folders);
