@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.17.0-beta.1 — 2026-03-26 — Beta Testing Phase
+
+Attachment preview system, image thumbnails, and provider persistence.
+
+### Added
+- **Attachment image thumbnails** — image attachments auto-load as 48×48 thumbnails inline in the attachment list when a message is opened; clicking a thumbnail opens the full preview modal
+- **Full-screen attachment preview modal** — "👁 Preview" button for images, PDFs, and text/JSON files opens a centered overlay modal; images render with `<img>`, PDFs in an `<iframe>`, text/JSON in a scrollable `<pre>`; click outside or ✕ to dismiss
+
+### Fixed
+- **Provider selection not persisted** — switching to the bridge server in Settings now saves to `localStorage` (`mailframe-provider`) and is restored on page refresh; previously always defaulted back to Demo on reload
+
+### Changed
+- `App.tsx` — `providerId` initialised from `localStorage`; `onProviderChange` wrapper persists selection; `imageThumbs` state auto-fetches all image attachments when detail loads; preview modal JSX added to render tree
+- `global.css` — added `.mf-att-thumb`, `.mf-att-preview`, `.mf-preview-overlay`, `.mf-preview-modal`, `.mf-preview-header`, `.mf-preview-body`, `.mf-preview-image`, `.mf-preview-iframe`, `.mf-preview-text`
+
+---
+
 ## 1.15.0 — 2026-03-26
 
 Email templates and multi-account support.
