@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.7.0 — 2026-03-26
+
+Dark themes (Eclipse + Midnight), new-mail polling badge, draft auto-save.
+
+### Added
+- **Eclipse theme** — dark Lumen variant; neutral dark grays, soft `#8ab4f8` blue accent, same shape language as Lumen
+- **Midnight theme** — dark Aurora variant; deep `#0f0d17` purples, vibrant `#bb86fc` lilac accent, same rounded radius as Aurora
+- **New-mail polling** — every 60 seconds (when connected to a bridge server) the active folder is checked for incoming messages; a pulsing **"N new ↑"** badge appears in the list header; clicking it performs a silent full refresh without disrupting the current reading session
+- **Draft auto-save** — compose fields auto-save to `localStorage` (500ms debounce) for new compositions; draft is restored when you open New Message; discarded when you send or click Discard; reply/forward windows are not affected
+- **Draft saved indicator** — subtle "Draft saved" label appears in compose footer once content has been persisted
+
+### Changed
+- `ComposeModal.tsx` rewritten: `loadDraft()` helper, `isDraftTarget` guard, `handleDiscard` explicitly clears draft, improved `aria-label` on dialog and inputs, `htmlFor` on compose field labels
+- `App.tsx` — added `refreshToken` state (increment triggers mailbox reload without unmounting); `messageIdsRef` keeps message IDs in sync for polling without dep-array staleness; `handleManualRefresh` resets new count and bumps token
+
+---
+
 ## 1.6.0 — 2026-03-26
 
 HTML email rendering, load-more pagination, `.gitattributes`, GitHub release.
