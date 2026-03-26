@@ -1,5 +1,29 @@
 # Changelog
 
+## 1.5.0 — 2026-03-26
+
+Virtualized message list, loading/error states, unit test suite, full README.
+
+### Added
+- **Virtualized message list** — `@tanstack/react-virtual` replaces static render; only visible rows are in the DOM; handles mailboxes with thousands of messages at constant render cost
+- **Loading skeleton** — shimmer animation while mailbox is fetching; 5 placeholder rows with CSS `@keyframes mf-shimmer` gradient sweep
+- **Error state** — alert banner in message list if provider throws (network error, auth failure, etc.); includes error message text
+- **Empty state** — "No messages" placeholder when a folder is empty or search returns nothing
+- **Cancellation tokens** — mailbox fetch is now cancellable (prevents stale responses after rapid folder/provider switching)
+- **Vitest (frontend)** — `src/app/App.test.tsx` (5 smoke tests), `src/themes/registry.test.ts` (6 token-coverage tests); run with `npm test`
+- **Vitest (server)** — `server/src/encode.test.ts` (10 round-trip + edge-case tests); run with `cd server && npm test`
+- **README.md** — complete rewrite: quick start, bridge server setup, theme authoring guide, provider contract reference, architecture diagram, command table
+
+### Changed
+- `package.json` — added `test` and `test:watch` scripts
+- `vite.config.ts` — Vitest configured with jsdom environment + `@testing-library/jest-dom` setup
+
+### Test results
+- Frontend: **21 tests passed** (3 files)
+- Server: **10 tests passed** (1 file)
+
+---
+
 ## 1.4.0 — 2026-03-26
 
 Settings panel, drop-in theme system, accessibility pass, responsive layout.
