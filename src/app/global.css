@@ -1382,8 +1382,13 @@ kbd {
 
   /* Message list fills full width */
   .mf-list {
-    width: 100%;
+    width: 100% !important;
     flex-shrink: 0;
+  }
+
+  /* Hide resizer on mobile */
+  .mf-pane-resizer {
+    display: none;
   }
 
   /* Reading pane: hidden by default, full-screen when a message is selected */
@@ -1609,4 +1614,88 @@ kbd {
   color: var(--mf-color-text-secondary, var(--mf-color-text));
   font-size: 11px;
   flex-shrink: 0;
+}
+
+/* ── Resizable pane divider ────────────────────────────────────── */
+.mf-pane-resizer {
+  width: 5px;
+  flex-shrink: 0;
+  cursor: col-resize;
+  background: var(--mf-color-border);
+  transition: background 0.15s;
+  position: relative;
+  z-index: 10;
+}
+
+.mf-pane-resizer:hover,
+.mf-pane-resizer:active {
+  background: var(--mf-color-accent);
+}
+
+/* ── Drag-over folder highlight ───────────────────────────────── */
+.mf-folder-item.drag-over {
+  background: var(--mf-color-accent) !important;
+  color: #fff !important;
+}
+
+.mf-folder-item.drag-over .mf-folder-count {
+  background: rgba(255, 255, 255, 0.3);
+  color: #fff;
+}
+
+/* ── Message row drag cursor ──────────────────────────────────── */
+.mf-message-row[draggable="true"] {
+  cursor: grab;
+}
+
+.mf-message-row[draggable="true"]:active {
+  cursor: grabbing;
+}
+
+/* ── Snoozed indicator badge ──────────────────────────────────── */
+.mf-snooze-badge {
+  font-size: 11px;
+  padding: 2px 6px;
+  border-radius: 8px;
+  background: var(--mf-color-surface-alt, var(--mf-color-bg));
+  border: 1px solid var(--mf-color-border);
+  color: var(--mf-color-text-secondary, var(--mf-color-text));
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* ── Snooze picker popover ─────────────────────────────────────── */
+.mf-snooze-wrapper {
+  position: relative;
+  display: inline-flex;
+}
+
+.mf-snooze-picker {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 300;
+  background: var(--mf-color-surface);
+  border: 1px solid var(--mf-color-border);
+  border-radius: 6px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+  min-width: 160px;
+  padding: 4px 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.mf-snooze-option {
+  padding: 8px 14px;
+  text-align: left;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--mf-color-text);
+  white-space: nowrap;
+}
+
+.mf-snooze-option:hover {
+  background: var(--mf-color-hover);
 }
