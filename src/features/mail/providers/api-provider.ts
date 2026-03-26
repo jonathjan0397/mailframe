@@ -131,4 +131,8 @@ export const apiProvider: MailProvider = {
       body: JSON.stringify({ email }),
     });
   },
+
+  async getMessageSource(messageId: string) {
+    return apiFetch<{ source: string }>(`/messages/${encodeURIComponent(messageId)}/source`);
+  },
 };

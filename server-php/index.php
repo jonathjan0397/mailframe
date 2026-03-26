@@ -808,6 +808,22 @@ if ($mf_method === 'GET' && preg_match('#^messages/([^/]+)$#', $mf_route, $rm)) 
     mf_json($result);
 }
 
+// GET /messages/{id}/source
+if ($mf_method === 'GET' && preg_match('#^messages/([^/]+)/source$#', $mf_route, $rm)) {
+    $dec = mf_decode_id($rm[1]);
+    if (!$dec) mf_err('Invalid message id.');
+
+    $conn  = mf_imap_open($mf_creds, $dec['mailbox']);
+    $msgno = imap_msgno($conn, $dec['uid']);
+    if (!$msgno) { imap_close($conn); mf_err('Message not found.', 404); }
+
+    $headers = imap_fetchheader($conn, $msgno);
+    $body    = imap_body($conn, $msgno);
+    imap_close($conn);
+
+    mf_json(['source' => $headers . $body]);
+}
+
 // GET /messages/{id}/attachments/{partId}
 if ($mf_method === 'GET' && preg_match('#^messages/([^/]+)/attachments/(.+)$#', $mf_route, $rm)) {
     $dec     = mf_decode_id($rm[1]);

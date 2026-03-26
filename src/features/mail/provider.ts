@@ -61,4 +61,6 @@ export type MailProvider = {
   switchAccount?: (email: string) => Promise<{ email: string; accounts: string[] }>;
   /** Remove one account from the session; returns remaining accounts. */
   logoutAccount?: (email: string) => Promise<{ accounts: string[]; email?: string }>;
+  /** Fetch the raw RFC 822 source of a message (headers + body). */
+  getMessageSource?: (messageId: string) => Promise<{ source: string }>;
 };

@@ -221,6 +221,9 @@ export function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [newMessageCount, setNewMessageCount] = useState(0);
   const [mailNotifs, setMailNotifs] = useState<MailNotif[]>([]);
+  const [sourceOpen, setSourceOpen] = useState(false);
+  const [sourceContent, setSourceContent] = useState<string | null>(null);
+  const [sourceLoading, setSourceLoading] = useState(false);
   const [refreshToken, setRefreshToken] = useState(0);
   const [showKeyboardHelp, setShowKeyboardHelp] = useState(false);
   const [threadView, setThreadView] = useState(false);
@@ -924,6 +927,21 @@ export function App() {
     }
   }
 
+  async function handleViewSource() {
+    if (!detail || !provider.getMessageSource) return;
+    setSourceOpen(true);
+    setSourceContent(null);
+    setSourceLoading(true);
+    try {
+      const res = await provider.getMessageSource(detail.id);
+      setSourceContent(res.source);
+    } catch {
+      setSourceContent("Failed to load message source.");
+    } finally {
+      setSourceLoading(false);
+    }
+  }
+
   const handleReply = useCallback(() => {
     if (!detail) return;
     setCompose({ type: "reply", to: detail.sender, subject: `Re: ${detail.subject}`, bodyHtml: buildReplyHtml(detail, "reply") });
@@ -1168,6 +1186,46 @@ export function App() {
                   {atob(attachmentPreview.data)}
                 </pre>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Message source modal */}
+      {sourceOpen && (
+        <div
+          className="mf-source-overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Message source"
+          onClick={(e) => { if (e.target === e.currentTarget) setSourceOpen(false); }}
+        >
+          <div className="mf-source-modal">
+            <div className="mf-source-header">
+              <span>Message Source</span>
+              <div style={{ display: "flex", gap: 8 }}>
+                {sourceContent && (
+                  <button
+                    className="mf-action-btn"
+                    onClick={() => {
+                      const blob = new Blob([sourceContent], { type: "text/plain" });
+                      const url = URL.createObjectURL(blob);
+                      const a = document.createElement("a");
+                      a.href = url;
+                      a.download = `message-source-${detail?.id ?? "msg"}.eml`;
+                      a.click();
+                      URL.revokeObjectURL(url);
+                    }}
+                  >Download .eml</button>
+                )}
+                <button className="mf-preview-close" onClick={() => setSourceOpen(false)} aria-label="Close">×</button>
+              </div>
+            </div>
+            <div className="mf-source-body">
+              {sourceLoading
+                ? <div className="mf-source-loading">Loading…</div>
+                : <pre className="mf-source-pre">{sourceContent ?? ""}</pre>
+              }
             </div>
           </div>
         </div>
@@ -1768,6 +1826,9 @@ export function App() {
               <button className="mf-action-btn" onClick={() => handleArchive()}>Archive</button>
               <button className="mf-action-btn" onClick={handleSpam}>Spam</button>
               <button className="mf-action-btn" onClick={handlePrint}>Print</button>
+              {provider.getMessageSource && (
+                <button className="mf-action-btn" onClick={handleViewSource}>Source</button>
+              )}
               {moveTargets.length > 0 && (
                 <select
                   className="mf-move-select"
