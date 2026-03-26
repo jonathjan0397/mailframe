@@ -364,13 +364,14 @@ function mf_smtp_send(array $creds, array $payload): void {
     $secure     = !empty($MF_CFG['smtp']['secure']);
     $requireTls = !isset($MF_CFG['smtp']['requireTls']) || $MF_CFG['smtp']['requireTls'];
 
-    $from    = $creds['user'];
-    $to      = (string)($payload['to'] ?? '');
-    $cc      = (string)($payload['cc'] ?? '');
-    $bcc     = (string)($payload['bcc'] ?? '');
-    $subject = (string)($payload['subject'] ?? '(No subject)');
-    $text    = (string)($payload['body'] ?? '');
-    $html    = isset($payload['bodyHtml']) ? (string)$payload['bodyHtml'] : null;
+    $from        = $creds['user'];
+    $to          = (string)($payload['to'] ?? '');
+    $cc          = (string)($payload['cc'] ?? '');
+    $bcc         = (string)($payload['bcc'] ?? '');
+    $subject     = (string)($payload['subject'] ?? '(No subject)');
+    $text        = (string)($payload['body'] ?? '');
+    $html        = isset($payload['bodyHtml']) ? (string)$payload['bodyHtml'] : null;
+    $attachments = is_array($payload['attachments'] ?? null) ? $payload['attachments'] : [];
 
     // Connect
     $errno = 0; $errstr = '';
@@ -433,7 +434,9 @@ function mf_smtp_send(array $creds, array $payload): void {
     $write("DATA");
     $read();
 
-    $boundary = '----MF_' . bin2hex(random_bytes(8));
+    $mixed_b = '----MF_MIX_' . bin2hex(random_bytes(8));
+    $alt_b   = '----MF_ALT_' . bin2hex(random_bytes(8));
+
     $headers  = "From: $from\r\nTo: $to\r\n";
     if ($cc)  $headers .= "Cc: $cc\r\n";
     $headers .= "Subject: =?UTF-8?B?" . base64_encode($subject) . "?=\r\n";
@@ -441,17 +444,41 @@ function mf_smtp_send(array $creds, array $payload): void {
     $headers .= "Message-ID: <" . bin2hex(random_bytes(12)) . "@mailframe>\r\n";
     $headers .= "MIME-Version: 1.0\r\n";
 
+    // Build the text/html body section (will be nested inside mixed if attachments present)
     if ($html !== null) {
-        $headers  .= "Content-Type: multipart/alternative; boundary=\"$boundary\"\r\n";
-        $msg_body  = "--$boundary\r\nContent-Type: text/plain; charset=UTF-8\r\n";
-        $msg_body .= "Content-Transfer-Encoding: base64\r\n\r\n" . chunk_split(base64_encode($text));
-        $msg_body .= "--$boundary\r\nContent-Type: text/html; charset=UTF-8\r\n";
-        $msg_body .= "Content-Transfer-Encoding: base64\r\n\r\n" . chunk_split(base64_encode($html));
-        $msg_body .= "--$boundary--\r\n";
+        $body_part  = "Content-Type: multipart/alternative; boundary=\"$alt_b\"\r\n\r\n";
+        $body_part .= "--$alt_b\r\nContent-Type: text/plain; charset=UTF-8\r\n";
+        $body_part .= "Content-Transfer-Encoding: base64\r\n\r\n" . chunk_split(base64_encode($text));
+        $body_part .= "--$alt_b\r\nContent-Type: text/html; charset=UTF-8\r\n";
+        $body_part .= "Content-Transfer-Encoding: base64\r\n\r\n" . chunk_split(base64_encode($html));
+        $body_part .= "--$alt_b--\r\n";
     } else {
-        $headers  .= "Content-Type: text/plain; charset=UTF-8\r\n";
-        $headers  .= "Content-Transfer-Encoding: base64\r\n";
-        $msg_body  = chunk_split(base64_encode($text)) . "\r\n";
+        $body_part  = "Content-Type: text/plain; charset=UTF-8\r\n";
+        $body_part .= "Content-Transfer-Encoding: base64\r\n\r\n" . chunk_split(base64_encode($text));
+    }
+
+    if ($attachments) {
+        // Wrap body + attachments in multipart/mixed
+        $headers  .= "Content-Type: multipart/mixed; boundary=\"$mixed_b\"\r\n";
+        $msg_body  = "--$mixed_b\r\n" . $body_part;
+        foreach ($attachments as $att) {
+            $att_filename = (string)($att['filename'] ?? 'attachment');
+            $att_mime     = (string)($att['mimeType'] ?? 'application/octet-stream');
+            $att_data     = (string)($att['data'] ?? ''); // already base64 from frontend
+            // Re-encode cleanly in case the frontend sends raw base64 without line breaks
+            $att_b64 = chunk_split(preg_replace('/\s+/', '', $att_data));
+            $enc_name = '=?UTF-8?B?' . base64_encode($att_filename) . '?=';
+            $msg_body .= "--$mixed_b\r\n";
+            $msg_body .= "Content-Type: $att_mime; name=\"$enc_name\"\r\n";
+            $msg_body .= "Content-Transfer-Encoding: base64\r\n";
+            $msg_body .= "Content-Disposition: attachment; filename=\"$enc_name\"\r\n\r\n";
+            $msg_body .= $att_b64;
+        }
+        $msg_body .= "--$mixed_b--\r\n";
+    } else {
+        // No attachments — send body directly
+        $headers  .= $body_part;
+        $msg_body  = '';
     }
 
     $write($headers . "\r\n" . $msg_body . "\r\n.");
