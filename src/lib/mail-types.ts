@@ -11,6 +11,8 @@ export type MailItem = {
   subject: string;
   preview: string;
   timestamp: string;
+  /** Unix epoch in milliseconds. When present the frontend formats in the user's local timezone. */
+  timestampMs?: number;
   unread?: boolean;
   starred?: boolean;
 };
@@ -32,6 +34,8 @@ export type MailMessageDetail = {
   subject: string;
   timestamp: string;
   body: string[];
+  /** Unix epoch in milliseconds. When present the frontend formats in the user's local timezone. */
+  timestampMs?: number;
   /** Sanitized HTML body, if the message contains an HTML part. */
   bodyHtml?: string;
   /** Attachment metadata list. */

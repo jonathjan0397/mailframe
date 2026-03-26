@@ -100,6 +100,20 @@ function formatFileSize(bytes: number): string {
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
 
+function formatTs(ms: number): string {
+  const d = new Date(ms);
+  const now = new Date();
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const msgDayStart = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  if (msgDayStart === todayStart) {
+    return d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+  }
+  if (d.getFullYear() === now.getFullYear()) {
+    return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  }
+  return d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+}
+
 function resolveInlineImages(
   html: string,
   messageId: string,
@@ -1327,7 +1341,7 @@ export function App() {
                       <div className="mf-message-content">
                         <div className="mf-message-top">
                           <span className="mf-message-sender">{senderDisplay}</span>
-                          <span className="mf-message-timestamp">{group.latestMsg.timestamp}</span>
+                          <span className="mf-message-timestamp">{group.latestMsg.timestampMs ? formatTs(group.latestMsg.timestampMs) : group.latestMsg.timestamp}</span>
                         </div>
                         <div className="mf-message-subject">
                           {group.latestMsg.subject}
@@ -1392,7 +1406,7 @@ export function App() {
                     <div className="mf-message-content">
                       <div className="mf-message-top">
                         <span className="mf-message-sender">{msg.sender}</span>
-                        <span className="mf-message-timestamp">{msg.timestamp}</span>
+                        <span className="mf-message-timestamp">{msg.timestampMs ? formatTs(msg.timestampMs) : msg.timestamp}</span>
                       </div>
                       <div className="mf-message-subject">{msg.subject}</div>
                       <div className="mf-message-preview">{msg.preview}</div>
@@ -1477,7 +1491,7 @@ export function App() {
                     <span className="mf-pane-recipients">CC: {detail.cc.join(", ")}</span>
                   )}
                 </div>
-                <span className="mf-pane-timestamp">{detail.timestamp}</span>
+                <span className="mf-pane-timestamp">{detail.timestampMs ? formatTs(detail.timestampMs) : detail.timestamp}</span>
               </div>
             </div>
 
@@ -1556,7 +1570,7 @@ export function App() {
                       >
                         <span className="mf-thread-item-sender">{m.sender}</span>
                         <span className="mf-thread-item-subject">{m.subject}</span>
-                        <span className="mf-thread-item-ts">{m.timestamp}</span>
+                        <span className="mf-thread-item-ts">{m.timestampMs ? formatTs(m.timestampMs) : m.timestamp}</span>
                       </li>
                     ))}
                   </ul>
