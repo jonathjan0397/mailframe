@@ -221,6 +221,8 @@ export function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [newMessageCount, setNewMessageCount] = useState(0);
   const [mailNotifs, setMailNotifs] = useState<MailNotif[]>([]);
+  const [apiOnline, setApiOnline] = useState(true);
+  const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [sourceOpen, setSourceOpen] = useState(false);
   const [sourceContent, setSourceContent] = useState<string | null>(null);
   const [sourceLoading, setSourceLoading] = useState(false);
@@ -490,6 +492,8 @@ export function App() {
     setNewMessageCount(0);
     provider.getMailboxSnapshot({ folderId: activeFolderId, query: search, page: 1, signal: ac.signal })
       .then((snapshot) => {
+        if (!apiOnline) { setApiOnline(true); showToast("Reconnected"); }
+        if (retryTimerRef.current) { clearTimeout(retryTimerRef.current); retryTimerRef.current = null; }
         setFolders(snapshot.folders);
         setMessages(snapshot.messages);
         setHasNextPage(snapshot.meta?.hasNextPage ?? false);
@@ -497,6 +501,12 @@ export function App() {
       })
       .catch((e: unknown) => {
         if ((e as { name?: string }).name === "AbortError") return;
+        const isNetwork = e instanceof TypeError;
+        if (isNetwork) {
+          setApiOnline(false);
+          if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
+          retryTimerRef.current = setTimeout(() => setRefreshToken((n) => n + 1), 15_000);
+        }
         setMailboxError(e instanceof Error ? e.message : "Failed to load mailbox.");
         setMailboxLoading(false);
       });
@@ -646,6 +656,15 @@ export function App() {
 
   // Close snooze picker when selected message changes
   useEffect(() => { setSnoozePicker(null); }, [selectedId]);
+
+  // Reconnect when browser regains network access
+  useEffect(() => {
+    const handleOnline = () => {
+      if (!apiOnline) setRefreshToken((n) => n + 1);
+    };
+    window.addEventListener("online", handleOnline);
+    return () => window.removeEventListener("online", handleOnline);
+  }, [apiOnline]);
 
   // Register stable keyboard listener
   useEffect(() => {
@@ -995,6 +1014,25 @@ export function App() {
       case "#": handleDelete(); break;
       case "u": handleMarkUnread(); break;
       case "?": setShowKeyboardHelp(true); break;
+      case "j": {
+        // Next message
+        const list = threadView ? threadGroups.map((g) => g.latestMsg) : visibleMessages;
+        const idx = list.findIndex((m) => m.id === selectedId);
+        if (idx < list.length - 1) setSelectedId(list[idx + 1].id);
+        break;
+      }
+      case "k": {
+        // Previous message
+        const list = threadView ? threadGroups.map((g) => g.latestMsg) : visibleMessages;
+        const idx = list.findIndex((m) => m.id === selectedId);
+        if (idx > 0) setSelectedId(list[idx - 1].id);
+        break;
+      }
+      case "/": {
+        e.preventDefault();
+        (document.querySelector(".mf-search") as HTMLInputElement | null)?.focus();
+        break;
+      }
     }
   };
 
@@ -1032,6 +1070,20 @@ export function App() {
 
   return (
     <div className="mf-shell">
+      {/* Offline / reconnecting banner */}
+      {!apiOnline && (
+        <div className="mf-offline-banner" role="alert">
+          <span>⚠ Connection lost — retrying in 15s…</span>
+          <button
+            className="mf-offline-retry"
+            onClick={() => {
+              if (retryTimerRef.current) { clearTimeout(retryTimerRef.current); retryTimerRef.current = null; }
+              setRefreshToken((n) => n + 1);
+            }}
+          >Retry now</button>
+        </div>
+      )}
+
       {/* Keyboard shortcut help overlay */}
       {showKeyboardHelp && (
         <div className="mf-kb-overlay" onClick={() => setShowKeyboardHelp(false)}>
@@ -1053,14 +1105,17 @@ export function App() {
               </button>
             </div>
             <dl className="mf-kb-grid">
-              <dt><kbd>c</kbd></dt><dd>Compose</dd>
+              <dt><kbd>c</kbd></dt><dd>Compose new message</dd>
               <dt><kbd>r</kbd></dt><dd>Reply</dd>
               <dt><kbd>a</kbd></dt><dd>Reply All</dd>
               <dt><kbd>f</kbd></dt><dd>Forward</dd>
+              <dt><kbd>j</kbd></dt><dd>Next message</dd>
+              <dt><kbd>k</kbd></dt><dd>Previous message</dd>
               <dt><kbd>e</kbd></dt><dd>Archive</dd>
               <dt><kbd>#</kbd></dt><dd>Delete</dd>
               <dt><kbd>u</kbd></dt><dd>Mark as unread</dd>
-              <dt><kbd>?</kbd></dt><dd>Show shortcuts</dd>
+              <dt><kbd>/</kbd></dt><dd>Focus search</dd>
+              <dt><kbd>?</kbd></dt><dd>Show this dialog</dd>
               <dt><kbd>Esc</kbd></dt><dd>Close / deselect</dd>
             </dl>
           </div>
@@ -1290,6 +1345,9 @@ export function App() {
           aria-hidden="true"
         />
       )}
+
+      {/* Main row: sidebar + list + pane */}
+      <div className="mf-shell-body">
 
       {/* Sidebar */}
       <aside className={`mf-sidebar${sidebarOpen ? " open" : ""}`} aria-label="Navigation">
@@ -2010,6 +2068,7 @@ export function App() {
           </>
         )}
       </main>
+      </div>{/* end mf-shell-body */}
     </div>
   );
 }

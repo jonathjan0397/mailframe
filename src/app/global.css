@@ -29,7 +29,42 @@ input {
 /* Shell layout */
 .mf-shell {
   display: flex;
+  flex-direction: column;
   height: 100%;
+}
+
+/* Offline banner */
+.mf-offline-banner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  background: #b71c1c;
+  color: #fff;
+  font-size: var(--mf-font-size-sm, 13px);
+  font-weight: 500;
+  padding: 7px 16px;
+  flex-shrink: 0;
+  z-index: 200;
+}
+.mf-offline-retry {
+  background: rgba(255,255,255,0.2);
+  border: 1px solid rgba(255,255,255,0.6);
+  color: #fff;
+  border-radius: 4px;
+  padding: 2px 12px;
+  font-size: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.mf-offline-retry:hover { background: rgba(255,255,255,0.35); }
+
+/* Inner row: fills remaining height below offline banner */
+.mf-shell-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
 }
 
 /* Sidebar */

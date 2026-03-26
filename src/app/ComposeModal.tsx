@@ -166,16 +166,20 @@ export function ComposeModal({
     editorRef.current.focus();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  function saveDraft() {
+  function saveDraft(overrides?: Partial<{ to: string; cc: string; bcc: string; subject: string }>) {
     if (!isDraftTarget) return;
     if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
     draftTimerRef.current = setTimeout(() => {
       const bodyHtml = editorRef.current?.innerHTML ?? "";
       const body = editorRef.current?.innerText ?? "";
-      if (to || subject || bodyHtml) {
+      const t = overrides?.to ?? to;
+      const c = overrides?.cc ?? cc;
+      const b = overrides?.bcc ?? bcc;
+      const s = overrides?.subject ?? subject;
+      if (t || s || bodyHtml) {
         localStorage.setItem(
           DRAFT_KEY,
-          JSON.stringify({ to, cc, bcc, subject, body, bodyHtml }),
+          JSON.stringify({ to: t, cc: c, bcc: b, subject: s, body, bodyHtml }),
         );
         setDraftSaved(true);
       } else {
@@ -301,10 +305,12 @@ export function ComposeModal({
     onClose();
   }
 
-  function handleFieldChange(setter: (v: string) => void) {
+  type DraftOverride = Partial<{ to: string; cc: string; bcc: string; subject: string }>;
+  function handleFieldChange(setter: (v: string) => void, draftKey?: keyof DraftOverride) {
     return (e: React.ChangeEvent<HTMLInputElement>) => {
-      setter(e.target.value);
-      saveDraft();
+      const val = e.target.value;
+      setter(val);
+      saveDraft(draftKey ? { [draftKey]: val } as DraftOverride : undefined);
     };
   }
 
@@ -365,9 +371,10 @@ export function ComposeModal({
 
   function handleAddressChange(setter: (v: string) => void, field: SuggField) {
     return (e: React.ChangeEvent<HTMLInputElement>) => {
-      setter(e.target.value);
-      saveDraft();
-      openSuggestions(e.target.value, field);
+      const val = e.target.value;
+      setter(val);
+      saveDraft({ [field]: val } as Partial<{ to: string; cc: string; bcc: string; subject: string }>);
+      openSuggestions(val, field);
     };
   }
 
@@ -536,7 +543,7 @@ export function ComposeModal({
               id="mf-compose-subject"
               type="text"
               value={subject}
-              onChange={handleFieldChange(setSubject)}
+              onChange={handleFieldChange(setSubject, "subject")}
               placeholder="Subject"
             />
           </div>
