@@ -60,39 +60,104 @@ npm run dev
 
 Switch to **Settings → Connection → Demo** if the API provider was previously selected.
 
-## Deploying the PHP Bridge (shared hosting / FTP only)
+---
 
-The PHP bridge (`server-php/`) requires only PHP 7.4+ with the `php-imap` extension — standard on cPanel, CWP, and Plesk. No Node.js, no shell access, no Composer.
+## Basic Install — Shared Hosting with MySQL (no shell access required)
 
-### 1. Configure
+**Best for:** cPanel, CWP, Plesk, or any shared host where you can upload files via FTP or the file manager but cannot run shell commands on the server.
 
-Edit `server-php/mailframe.config.json`:
+**Requirements:** PHP 7.4+ with the `php-imap` extension (standard on most shared hosts), a MySQL database, and an FTP client or cPanel File Manager.
+
+### Step 1 — Build the frontend (one time, on your own computer)
+
+You need Node.js installed locally to build the frontend once. You will not need it again after this step.
+
+```bash
+git clone https://github.com/jonathjan0397/mailframe.git
+cd mailframe
+npm install
+```
+
+Create a file called `.env.local` in the project root containing your site URL:
+
+```
+VITE_API_BASE_URL=https://yourdomain.com/mailframe-api
+```
+
+Then build:
+
+```bash
+npm run build
+```
+
+This produces a `dist/` folder — these are the files you will upload.
+
+### Step 2 — Configure the PHP bridge
+
+Open `server-php/mailframe.config.json` in any text editor and fill in your mail server details:
 
 ```json
 {
-  "imap": { "host": "mail.yourserver.com", "port": 993, "secure": true },
-  "smtp": { "host": "mail.yourserver.com", "port": 465, "secure": true },
+  "imap": { "host": "mail.yourdomain.com", "port": 993, "secure": true },
+  "smtp": { "host": "mail.yourdomain.com", "port": 465, "secure": true },
   "app":  { "name": "MailFrame", "sessionTtlHours": 24, "allowedDomains": [] },
-  "settings": { "storage": "file" }
+  "settings": { "storage": "mysql" }
 }
 ```
 
-Set `"storage": "mysql"` and run the [database setup wizard](#mysql-setup) for cross-device settings sync.
+> Set `"storage": "file"` if you do not want MySQL — settings will not sync across devices but everything else works fine.
 
-### 2. Build the frontend
+### Step 3 — Upload files via FTP or cPanel File Manager
+
+Upload these three things to your server:
+
+| Local path | Upload to |
+|---|---|
+| `dist/` (entire folder contents) | `public_html/mailframe/` |
+| `server-php/` (entire folder) | `public_html/mailframe-api/` |
+| `deploy/htaccess` | `public_html/.htaccess` (rename — remove the leading dot if your FTP client hides it, then rename on the server) |
+
+> **cPanel tip:** Use **File Manager → Upload** to drag and drop both folders. Create the `mailframe/` and `mailframe-api/` directories first if they do not exist.
+
+### Step 4 — Run the MySQL setup wizard
+
+1. Upload `server-php/setup.php` into `public_html/mailframe-api/` alongside `index.php`
+2. Visit `https://yourdomain.com/mailframe-api/setup.php` in your browser
+3. Enter your MySQL host, database name, username, and password
+4. Click **Run Setup** — the wizard creates the `mf_settings` table, writes the credentials into `mailframe.config.json`, and deletes itself
+
+### Step 5 — Log in
+
+Navigate to `https://yourdomain.com/mailframe/` and log in with your email address and IMAP password.
+
+> In **Settings → Connection**, make sure **Bridge Server** is selected. This is remembered across sessions once set.
+
+---
+
+## Full Install — VPS or Dedicated Server (Node.js bridge)
+
+**Best for:** VPS, dedicated servers, or Docker deployments where you have shell (SSH) access and can run Node.js.
+
+**Requirements:** Node.js 20+, npm, shell access, and optionally PM2 for process management.
+
+### Step 1 — Build the frontend
 
 ```bash
-VITE_API_BASE_URL=https://yourdomain.com/api npm run build
+git clone https://github.com/jonathjan0397/mailframe.git
+cd mailframe
+npm install
 ```
 
-Or set `VITE_API_BASE_URL` in `.env.local` and run `npm run build`.
+Create `.env.local`:
 
-### 3. Deploy via FTP
+```
+VITE_API_BASE_URL=https://yourdomain.com/api
+```
+
+Then build and deploy via the included deploy script:
 
 ```bash
-# Set credentials (or add to .env.local / shell profile):
 export FTP_HOST=yourdomain.com FTP_USER=ftpuser FTP_PASS=secret FTP_ROOT=public_html
-
 node deploy/deploy.js all
 # Uploads: dist/ → public_html/mailframe/
 #          server-php/ → public_html/mailframe-api/
@@ -101,25 +166,19 @@ node deploy/deploy.js all
 
 Individual targets: `mailframe`, `mailframe-php`, `htaccess`.
 
-### 4. Log in
+### Step 2 — Configure and start the Node.js bridge
 
-Navigate to `https://yourdomain.com/mailframe/`. Enter your email address and IMAP password.
+Create `server/mailframe.config.json`:
 
-### MySQL Setup
+```json
+{
+  "imap": { "host": "mail.yourdomain.com", "port": 993, "secure": true },
+  "smtp": { "host": "mail.yourdomain.com", "port": 465, "secure": true },
+  "app":  { "name": "MailFrame", "sessionTtlHours": 24, "allowedDomains": [] }
+}
+```
 
-For persistent cross-device settings, upload `server-php/setup.php` alongside `index.php` and visit it in your browser. The wizard tests your MySQL connection, creates the `mf_settings` table, updates the config, and self-deletes.
-
----
-
-## Deploying the Node.js Bridge (VPS / Docker)
-
-The Node.js bridge (`server/`) requires Node 20+ and shell access.
-
-### 1. Configure
-
-Create `server/mailframe.config.json` (same format as above, minus `settings`).
-
-### 2. Build and start
+Build and start:
 
 ```bash
 cd server
@@ -134,12 +193,16 @@ For production, use PM2:
 pm2 start dist/index.js --name mailframe-api && pm2 save
 ```
 
-### 3. Configure Apache reverse proxy
+### Step 3 — Configure Apache reverse proxy
 
 ```apache
 ProxyPass        /api/ http://localhost:4010/
 ProxyPassReverse /api/ http://localhost:4010/
 ```
+
+### Step 4 — Log in
+
+Navigate to `https://yourdomain.com/mailframe/` and log in with your email address and IMAP password.
 
 ---
 
