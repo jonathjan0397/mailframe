@@ -10,6 +10,7 @@ export type ThemeTokens = {
   // Identity
   id: string;
   label: string;
+  description?: string;
   family: "lumen" | "aurora" | string;
 
   // Color — surface

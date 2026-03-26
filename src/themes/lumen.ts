@@ -8,6 +8,7 @@ import type { ThemeTokens } from "./tokens";
 export const lumenTheme: ThemeTokens = {
   id: "lumen",
   label: "Lumen",
+  description: "Clean, bright, minimal. White surfaces with a blue accent.",
   family: "lumen",
 
   colorBg: "#f1f3f4",

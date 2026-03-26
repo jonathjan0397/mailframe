@@ -1,5 +1,33 @@
 # Changelog
 
+## 1.4.0 — 2026-03-26
+
+Settings panel, drop-in theme system, accessibility pass, responsive layout.
+
+### Added
+- `src/themes/registry.ts` — `themeRegistry[]` array; add a theme here to make it available everywhere
+- `src/app/SettingsPanel.tsx` — slide-in settings drawer (right edge) with:
+  - **Appearance** — theme cards with accent swatch + name + description; active theme highlighted
+  - **Connection** — data source selector (Demo fixture data / Bridge server); shows API URL hint when bridge is selected
+- Gear (⚙) button in sidebar footer opens settings; focus returns to it on close
+- Mobile hamburger (☰) toggle in message list header shows/hides off-canvas sidebar
+- Mobile "← Back" button in reading pane returns to message list
+- `description` field on `ThemeTokens` (optional); populated in Lumen and Aurora themes
+
+### Changed
+- `App.tsx` — provider is now switchable at runtime via Settings (`demo` → `apiProvider`); uses `useMemo` so switching reloads data automatically
+- Theme switcher removed from sidebar — moved into Settings panel as visual cards
+- All structural elements now carry ARIA roles and labels (`aria-label`, `aria-selected`, `aria-pressed`, `aria-live`, `role="toolbar"`, `role="article"`, etc.)
+- Folder items and message rows are keyboard-navigable (Tab + Enter/Space)
+- Toast uses `role="status"` + `aria-live="polite"`
+- Cancellation token in detail-fetch effect prevents stale responses from setting state after navigation
+
+### Responsive
+- `≤ 900px` — message list narrows to 300px
+- `≤ 768px` — sidebar off-canvas (fixed, z-indexed, `transform: translateX`); message list full width; reading pane overlays full screen when message selected
+
+---
+
 ## 1.3.0 — 2026-03-26
 
 IMAP/SMTP bridge server. MailFrame can now connect to a real email account.

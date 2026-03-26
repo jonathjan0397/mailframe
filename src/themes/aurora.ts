@@ -8,6 +8,7 @@ import type { ThemeTokens } from "./tokens";
 export const auroraTheme: ThemeTokens = {
   id: "aurora",
   label: "Aurora",
+  description: "Rich, vibrant, expressive. Deep purple tones with bold accents.",
   family: "aurora",
 
   colorBg: "#f4f0fb",
