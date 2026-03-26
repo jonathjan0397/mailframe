@@ -223,6 +223,8 @@ export function App() {
   const [mailNotifs, setMailNotifs] = useState<MailNotif[]>([]);
   const [apiOnline, setApiOnline] = useState(true);
   const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  type SortBy = "date-desc" | "date-asc" | "unread" | "starred" | "sender" | "subject";
+  const [sortBy, setSortBy] = useState<SortBy>("date-desc");
   const [sourceOpen, setSourceOpen] = useState(false);
   const [sourceContent, setSourceContent] = useState<string | null>(null);
   const [sourceLoading, setSourceLoading] = useState(false);
@@ -303,9 +305,22 @@ export function App() {
     [messages, snoozedIds, activeFolderId],
   );
 
+  const sortedMessages = useMemo(() => {
+    const list = [...visibleMessages];
+    switch (sortBy) {
+      case "date-desc": return list; // server already returns newest-first
+      case "date-asc":  return list.reverse();
+      case "unread":    return list.sort((a, b) => Number(b.unread) - Number(a.unread));
+      case "starred":   return list.sort((a, b) => Number(b.starred) - Number(a.starred));
+      case "sender":    return list.sort((a, b) => a.sender.localeCompare(b.sender));
+      case "subject":   return list.sort((a, b) => a.subject.localeCompare(b.subject));
+      default:          return list;
+    }
+  }, [visibleMessages, sortBy]);
+
   const threadGroups = useMemo(
-    () => (threadView ? buildThreadGroups(visibleMessages) : []),
-    [visibleMessages, threadView],
+    () => (threadView ? buildThreadGroups(sortedMessages) : []),
+    [sortedMessages, threadView],
   );
 
   // Apply theme + persist selection
@@ -851,10 +866,10 @@ export function App() {
   }
 
   function handleSelectAll() {
-    if (selectedIds.size === visibleMessages.length) {
+    if (selectedIds.size === sortedMessages.length) {
       setSelectedIds(new Set());
     } else {
-      setSelectedIds(new Set(visibleMessages.map((m) => m.id)));
+      setSelectedIds(new Set(sortedMessages.map((m) => m.id)));
     }
   }
 
@@ -1016,14 +1031,14 @@ export function App() {
       case "?": setShowKeyboardHelp(true); break;
       case "j": {
         // Next message
-        const list = threadView ? threadGroups.map((g) => g.latestMsg) : visibleMessages;
+        const list = threadView ? threadGroups.map((g) => g.latestMsg) : sortedMessages;
         const idx = list.findIndex((m) => m.id === selectedId);
         if (idx < list.length - 1) setSelectedId(list[idx + 1].id);
         break;
       }
       case "k": {
         // Previous message
-        const list = threadView ? threadGroups.map((g) => g.latestMsg) : visibleMessages;
+        const list = threadView ? threadGroups.map((g) => g.latestMsg) : sortedMessages;
         const idx = list.findIndex((m) => m.id === selectedId);
         if (idx > 0) setSelectedId(list[idx - 1].id);
         break;
@@ -1037,7 +1052,7 @@ export function App() {
   };
 
   const rowVirtualizer = useVirtualizer({
-    count: threadView ? threadGroups.length : visibleMessages.length,
+    count: threadView ? threadGroups.length : sortedMessages.length,
     getScrollElement: () => messagesListRef.current,
     estimateSize: () => 73,
     overscan: 8,
@@ -1046,7 +1061,7 @@ export function App() {
   const activeFolder = folders.find((f) => f.id === activeFolderId);
   const moveTargets = folders.filter((f) => f.id !== activeFolderId && f.id !== "Trash");
   const bulkActive = selectedIds.size > 0;
-  const allSelected = visibleMessages.length > 0 && selectedIds.size === visibleMessages.length;
+  const allSelected = sortedMessages.length > 0 && selectedIds.size === sortedMessages.length;
   const isTrash = activeFolder?.label === "Trash" || activeFolderId === "Trash";
   const hasReplyAll = !!(detail?.to?.length || detail?.cc?.length);
   const canManageFolders = providerId === "api" && !!provider.createFolder;
@@ -1557,13 +1572,27 @@ export function App() {
           >
             ⋮≡
           </button>
-          {provider.markRead && visibleMessages.some((m) => m.unread) && (
+          <select
+            className="mf-sort-select"
+            value={sortBy}
+            onChange={(e) => setSortBy(e.target.value as SortBy)}
+            aria-label="Sort messages by"
+            title="Sort messages"
+          >
+            <option value="date-desc">Newest</option>
+            <option value="date-asc">Oldest</option>
+            <option value="unread">Unread</option>
+            <option value="starred">Starred</option>
+            <option value="sender">Sender</option>
+            <option value="subject">Subject</option>
+          </select>
+          {provider.markRead && sortedMessages.some((m) => m.unread) && (
             <button
               className="mf-mark-all-read"
               title="Mark all as read"
               aria-label="Mark all messages as read"
               onClick={() => {
-                const unreadIds = visibleMessages.filter((m) => m.unread).map((m) => m.id);
+                const unreadIds = sortedMessages.filter((m) => m.unread).map((m) => m.id);
                 provider.markRead?.(unreadIds, true);
                 setMessages((prev) => prev.map((m) => ({ ...m, unread: false })));
                 setFolders((prev) => prev.map((f) => f.id === activeFolderId ? { ...f, unreadCount: 0 } : f));
@@ -1625,13 +1654,13 @@ export function App() {
           </div>
         )}
 
-        {!mailboxLoading && !mailboxError && visibleMessages.length === 0 && (
+        {!mailboxLoading && !mailboxError && sortedMessages.length === 0 && (
           <div className="mf-messages-empty">
             {messages.length > 0 && snoozedIds.size > 0 ? "All messages snoozed" : "No messages"}
           </div>
         )}
 
-        {!mailboxLoading && !mailboxError && visibleMessages.length > 0 && (
+        {!mailboxLoading && !mailboxError && sortedMessages.length > 0 && (
           <ul
             ref={messagesListRef}
             className="mf-messages"
@@ -1715,7 +1744,7 @@ export function App() {
                   );
                 }
 
-                const msg = visibleMessages[virtualItem.index];
+                const msg = sortedMessages[virtualItem.index];
                 return (
                   <li
                     key={msg.id}

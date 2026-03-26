@@ -2288,6 +2288,22 @@ kbd {
   color: #fff;
 }
 
+.mf-sort-select {
+  padding: 3px 6px;
+  border: 1px solid var(--mf-color-border, #e0e0e0);
+  border-radius: 4px;
+  background: var(--mf-color-surface, #fff);
+  color: var(--mf-color-text, #333);
+  font-size: 11px;
+  cursor: pointer;
+  flex-shrink: 0;
+  max-width: 80px;
+}
+.mf-sort-select:focus {
+  outline: 2px solid var(--mf-color-accent);
+  outline-offset: 1px;
+}
+
 .mf-mark-all-read {
   padding: 3px 7px;
   border: 1px solid var(--mf-color-border, #e0e0e0);
