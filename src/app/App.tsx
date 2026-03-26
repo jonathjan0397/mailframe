@@ -6,6 +6,7 @@ import { themeRegistry } from "../themes/registry";
 import { demoProvider } from "../features/mail/providers/demo-provider";
 import { apiProvider } from "../features/mail/providers/api-provider";
 import { ComposeModal } from "./ComposeModal";
+import { LoginPage } from "./LoginPage";
 import { SettingsPanel } from "./SettingsPanel";
 import type { ProviderId } from "./SettingsPanel";
 import type { MailItem, MailMessageDetail, MailFolder } from "../lib/mail-types";
@@ -97,8 +98,12 @@ function formatFileSize(bytes: number): string {
 }
 
 export function App() {
-  const [activeThemeId, setActiveThemeId] = useState(themeRegistry[0].id);
+  const [activeThemeId, setActiveThemeId] = useState(
+    () => localStorage.getItem("mailframe-theme") ?? themeRegistry[0].id,
+  );
   const [providerId, setProviderId] = useState<ProviderId>("demo");
+  // Auth state: null = checking, false = not logged in, email string = logged in
+  const [authState, setAuthState] = useState<null | false | string>(null);
   const [activeFolderId, setActiveFolderId] = useState("INBOX");
   const [search, setSearch] = useState("");
   const [folders, setFolders] = useState<MailFolder[]>([]);
@@ -170,11 +175,33 @@ export function App() {
     [visibleMessages, threadView],
   );
 
-  // Apply theme
+  // Apply theme + persist selection
   useEffect(() => {
     const theme = themeRegistry.find((t) => t.id === activeThemeId) ?? themeRegistry[0];
     applyTheme(theme);
+    localStorage.setItem("mailframe-theme", activeThemeId);
   }, [activeThemeId]);
+
+  // Check auth when switching to bridge provider
+  useEffect(() => {
+    if (providerId !== "api") { setAuthState(null); return; }
+    const apiBase = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? "http://localhost:4010";
+    fetch(`${apiBase}/auth/me`, { credentials: "include" })
+      .then((r) => r.json())
+      .then((d: { ok: boolean; email?: string }) => {
+        setAuthState(d.ok && d.email ? d.email : false);
+      })
+      .catch(() => setAuthState(false));
+  }, [providerId]);
+
+  async function handleLogout() {
+    const apiBase = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? "http://localhost:4010";
+    await fetch(`${apiBase}/auth/logout`, { method: "POST", credentials: "include" }).catch(() => {});
+    setAuthState(false);
+    setSelectedId(null);
+    setDetail(null);
+    setMessages([]);
+  }
 
   // Tab title badge
   useEffect(() => {
@@ -594,6 +621,23 @@ export function App() {
   const hasReplyAll = !!(detail?.to?.length || detail?.cc?.length);
   const canManageFolders = providerId === "api" && !!provider.createFolder;
 
+  const apiBase = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? "http://localhost:4010";
+
+  // Show login page when bridge provider is active and user is not authenticated
+  if (providerId === "api" && authState !== null && authState === false) {
+    return (
+      <LoginPage
+        apiBase={apiBase}
+        onLogin={(email) => setAuthState(email)}
+      />
+    );
+  }
+
+  // Auth check in progress — show nothing (avoids flash of wrong content)
+  if (providerId === "api" && authState === null) {
+    return <div className="mf-login-overlay" aria-busy="true" aria-label="Checking session…" />;
+  }
+
   return (
     <div className="mf-shell">
       {/* Keyboard shortcut help overlay */}
@@ -803,6 +847,17 @@ export function App() {
           >
             ?
           </button>
+          {providerId === "api" && typeof authState === "string" && (
+            <button
+              className="mf-settings-btn"
+              onClick={handleLogout}
+              aria-label="Sign out"
+              title={`Sign out (${authState})`}
+              style={{ marginLeft: "4px" }}
+            >
+              ⏏
+            </button>
+          )}
         </div>
       </aside>
 

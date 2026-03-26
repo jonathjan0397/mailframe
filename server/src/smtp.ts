@@ -1,4 +1,7 @@
 import nodemailer from "nodemailer";
+import { config } from "./config.js";
+
+export type SmtpCredentials = { user: string; pass: string };
 
 type AttachmentItem = {
   filename: string;
@@ -6,28 +9,29 @@ type AttachmentItem = {
   data: string; // base64
 };
 
-export async function sendMail(payload: {
-  to: string;
-  cc?: string;
-  bcc?: string;
-  subject: string;
-  body: string;
-  bodyHtml?: string;
-  replyToId?: string;
-  attachments?: AttachmentItem[];
-}) {
+export async function sendMail(
+  creds: SmtpCredentials,
+  payload: {
+    to: string;
+    cc?: string;
+    bcc?: string;
+    subject: string;
+    body: string;
+    bodyHtml?: string;
+    replyToId?: string;
+    attachments?: AttachmentItem[];
+  },
+) {
   const transport = nodemailer.createTransport({
-    host: process.env.SMTP_HOST,
-    port: parseInt(process.env.SMTP_PORT ?? "587", 10),
-    secure: process.env.SMTP_SECURE === "true",
-    auth: {
-      user: process.env.SMTP_USER,
-      pass: process.env.SMTP_PASS,
-    },
+    host: config.smtp.host,
+    port: config.smtp.port,
+    secure: config.smtp.secure,
+    requireTLS: config.smtp.requireTls,
+    auth: { user: creds.user, pass: creds.pass },
   });
 
   await transport.sendMail({
-    from: process.env.SMTP_FROM ?? process.env.SMTP_USER,
+    from: creds.user,
     to: payload.to,
     cc: payload.cc || undefined,
     bcc: payload.bcc || undefined,
