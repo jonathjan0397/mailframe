@@ -93,4 +93,18 @@ export const apiProvider: MailProvider = {
       `/messages/${encodeURIComponent(messageId)}/attachments/${encodeURIComponent(partId)}`,
     );
   },
+
+  async createFolder(name: string) {
+    await apiFetch("/folders/create", {
+      method: "POST",
+      body: JSON.stringify({ name }),
+    });
+  },
+
+  async deleteFolder(folderId: string) {
+    await apiFetch("/folders/delete", {
+      method: "POST",
+      body: JSON.stringify({ folder: folderId }),
+    });
+  },
 };

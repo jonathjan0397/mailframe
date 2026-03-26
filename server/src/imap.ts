@@ -98,6 +98,41 @@ export async function getFolders() {
   }
 }
 
+type SearchFilters = {
+  text: string;
+  from?: string;
+  subject?: string;
+  unreadOnly: boolean;
+  starredOnly: boolean;
+};
+
+function parseSearchFilters(q: string): SearchFilters {
+  let text = q;
+  let from: string | undefined;
+  let subject: string | undefined;
+  let unreadOnly = false;
+  let starredOnly = false;
+  text = text.replace(/\bfrom:(\S+)/gi, (_, v) => { from = v.toLowerCase(); return ""; });
+  text = text.replace(/\bsubject:(\S+)/gi, (_, v) => { subject = v.toLowerCase(); return ""; });
+  text = text.replace(/\bis:unread\b/gi, () => { unreadOnly = true; return ""; });
+  text = text.replace(/\bis:starred\b/gi, () => { starredOnly = true; return ""; });
+  return { text: text.trim(), from, subject, unreadOnly, starredOnly };
+}
+
+function extractPreview(bodyParts: Map<string, Buffer> | undefined): string {
+  if (!bodyParts) return "";
+  for (const [, content] of bodyParts) {
+    const raw = content.toString("utf8", 0, Math.min(content.length, 1000)).trim();
+    if (!raw) continue;
+    const lower = raw.slice(0, 100).toLowerCase();
+    const looksHtml = lower.includes("<!doctype") || lower.includes("<html") ||
+                      lower.includes("<body");
+    if (looksHtml) return "(HTML email)";
+    return raw.replace(/\s+/g, " ").slice(0, 120);
+  }
+  return "";
+}
+
 export async function getMailbox(mailbox: string, page: number, query: string) {
   const client = buildClient();
   await client.connect();
@@ -111,6 +146,8 @@ export async function getMailbox(mailbox: string, page: number, query: string) {
         return { messages: [], total: 0, hasNextPage: false };
       }
 
+      const filters = parseSearchFilters(query);
+
       // Fetch newest first — calculate UID range for page
       const start = Math.max(1, total - (page * PAGE_SIZE) + 1);
       const end = Math.max(1, total - ((page - 1) * PAGE_SIZE));
@@ -123,6 +160,7 @@ export async function getMailbox(mailbox: string, page: number, query: string) {
 
       for await (const msg of client.fetch(range, {
         uid: true, envelope: true, flags: true, bodyStructure: true,
+        bodyParts: ["1", "1.1", "TEXT"],
       })) {
         const sender = formatSender(msg.envelope?.from?.[0]);
         const subject = msg.envelope?.subject ?? "(No subject)";
@@ -130,19 +168,21 @@ export async function getMailbox(mailbox: string, page: number, query: string) {
         const unread = !msg.flags?.has("\\Seen");
         const starred = msg.flags?.has("\\Flagged") ?? false;
 
-        if (query) {
-          const q = query.toLowerCase();
-          if (
-            !sender.toLowerCase().includes(q) &&
-            !subject.toLowerCase().includes(q)
-          ) continue;
+        // Apply search filters
+        if (filters.text) {
+          const q = filters.text.toLowerCase();
+          if (!sender.toLowerCase().includes(q) && !subject.toLowerCase().includes(q)) continue;
         }
+        if (filters.from && !sender.toLowerCase().includes(filters.from)) continue;
+        if (filters.subject && !subject.toLowerCase().includes(filters.subject)) continue;
+        if (filters.unreadOnly && !unread) continue;
+        if (filters.starredOnly && !starred) continue;
+
+        const preview = extractPreview(msg.bodyParts) || "(No preview)";
 
         messages.push({
           id: encodeMessageId(msg.uid, mailbox),
-          sender, subject,
-          preview: "Open to read this message.",
-          timestamp, unread, starred,
+          sender, subject, preview, timestamp, unread, starred,
         });
       }
 
@@ -291,6 +331,26 @@ export async function deleteMessages(uids: number[], mailbox: string) {
     } finally {
       lock.release();
     }
+  } finally {
+    await client.logout();
+  }
+}
+
+export async function createFolder(name: string) {
+  const client = buildClient();
+  await client.connect();
+  try {
+    await client.mailboxCreate(name);
+  } finally {
+    await client.logout();
+  }
+}
+
+export async function deleteFolder(path: string) {
+  const client = buildClient();
+  await client.connect();
+  try {
+    await client.mailboxDelete(path);
   } finally {
     await client.logout();
   }

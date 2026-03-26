@@ -2,7 +2,7 @@ import "dotenv/config";
 import express from "express";
 import cors from "cors";
 import { decodeMessageId } from "./encode.js";
-import { getFolders, getMailbox, getMessage, getAttachment, moveMessages, deleteMessages, emptyFolder, markMessages, starMessage } from "./imap.js";
+import { getFolders, getMailbox, getMessage, getAttachment, moveMessages, deleteMessages, emptyFolder, markMessages, starMessage, createFolder, deleteFolder } from "./imap.js";
 import { sendMail } from "./smtp.js";
 
 const app = express();
@@ -154,6 +154,32 @@ app.post("/messages/empty", async (req, res) => {
   } catch (e) {
     console.error(e);
     err(res, 500, e instanceof Error ? e.message : "Empty folder failed.");
+  }
+});
+
+// POST /folders/create
+app.post("/folders/create", async (req, res) => {
+  const { name } = req.body as { name: string };
+  if (!name?.trim()) return err(res, 400, "name required.");
+  try {
+    await createFolder(name.trim());
+    res.json({ ok: true });
+  } catch (e) {
+    console.error(e);
+    err(res, 500, e instanceof Error ? e.message : "Create folder failed.");
+  }
+});
+
+// POST /folders/delete
+app.post("/folders/delete", async (req, res) => {
+  const { folder } = req.body as { folder: string };
+  if (!folder) return err(res, 400, "folder required.");
+  try {
+    await deleteFolder(folder);
+    res.json({ ok: true });
+  } catch (e) {
+    console.error(e);
+    err(res, 500, e instanceof Error ? e.message : "Delete folder failed.");
   }
 });
 

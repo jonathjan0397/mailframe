@@ -1,5 +1,28 @@
 # Changelog
 
+## 1.9.0 — 2026-03-26
+
+Real message preview, folder management, advanced search filters, tab title badge, browser notifications.
+
+### Added
+- **Real preview text** — `getMailbox` now fetches body parts `["1", "1.1", "TEXT"]` for each message and extracts the first 120 chars of plain-text content; HTML-only emails show "(HTML email)" instead of the hardcoded placeholder
+- **Folder management (bridge mode)** — "Folders" section header in sidebar gains a ＋ button; clicking shows an inline input form to create a new IMAP folder (`POST /folders/create` → imapflow `mailboxCreate`); each custom (non-system) folder shows a 🗑 delete button on hover (`POST /folders/delete` → `mailboxDelete`); confirm dialog guards deletion; folder list auto-refreshes after create/delete
+- **Advanced search filters** — search box accepts `from:name`, `subject:word`, `is:unread`, `is:starred` syntax (combinable with free text); server parses via `parseSearchFilters()`; demo provider parses via matching `parseDemoFilters()`; search placeholder updated to hint at syntax; `title` attribute shows full filter reference
+- **Tab title badge** — `document.title` updates to `(N) MailFrame` reflecting total unread across all folders; resets on unmount
+- **Browser notifications** — bridge mode requests `Notification` permission on first switch to api provider; polling fires `new Notification(...)` with sender/subject summary when new messages arrive; skipped silently if permission denied
+
+### Changed
+- `server/src/imap.ts` — `getMailbox` adds `bodyParts` to fetch and new `extractPreview()` helper; new `parseSearchFilters()` applies `from:`, `subject:`, `is:unread`, `is:starred`; added `createFolder()` and `deleteFolder()` exports
+- `server/src/index.ts` — added `POST /folders/create` and `POST /folders/delete` endpoints
+- `src/features/mail/provider.ts` — `MailProvider` gains `createFolder?` and `deleteFolder?`
+- `src/features/mail/providers/api-provider.ts` — added `createFolder` and `deleteFolder`
+- `src/features/mail/providers/demo-provider.ts` — search now applies full filter syntax via `parseDemoFilters()`
+- `src/app/App.tsx` — tab title effect; notification permission + polling notifications; folder management state/handlers; `SYSTEM_FOLDER_IDS` set; `reloadFolders()` helper; `canManageFolders` computed flag; sidebar folder management UI; search placeholder hints
+- `src/app/App.test.tsx` — updated search input test to use `aria-label` instead of old placeholder
+- `src/app/global.css` — folder management styles: header row, create button, delete button, inline create form
+
+---
+
 ## 1.8.0 — 2026-03-26
 
 Full standard email feature set: CC/BCC, Reply All, attachments, keyboard shortcuts, signature, spam, print, Empty Trash, contact autocomplete.
