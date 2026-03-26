@@ -319,6 +319,85 @@ export function ComposeModal({
   }
 
   const contacts = getContacts();
+
+  // ── Contact autocomplete ──────────────────────────────────────────────────
+  type SuggField = "to" | "cc" | "bcc";
+  const [suggField, setSuggField] = useState<SuggField | null>(null);
+  const [suggestions, setSuggestions] = useState<string[]>([]);
+  const [suggIndex, setSuggIndex] = useState(-1);
+
+  function lastToken(value: string): string {
+    const parts = value.split(",");
+    return parts[parts.length - 1].trimStart();
+  }
+
+  function replaceLastToken(value: string, replacement: string): string {
+    const parts = value.split(",");
+    parts[parts.length - 1] = " " + replacement;
+    return parts.join(",").replace(/^,\s*/, "");
+  }
+
+  function filterSuggestions(token: string): string[] {
+    if (token.length < 1) return [];
+    const lower = token.toLowerCase();
+    return contacts.filter((c) => c.toLowerCase().includes(lower)).slice(0, 7);
+  }
+
+  function openSuggestions(value: string, field: SuggField) {
+    const token = lastToken(value);
+    const filtered = filterSuggestions(token);
+    setSuggField(filtered.length ? field : null);
+    setSuggestions(filtered);
+    setSuggIndex(-1);
+  }
+
+  function commitSuggestion(
+    value: string,
+    setter: (v: string) => void,
+    contact: string,
+  ) {
+    setter(replaceLastToken(value, contact + ", "));
+    setSuggestions([]);
+    setSuggField(null);
+    setSuggIndex(-1);
+    saveDraft();
+  }
+
+  function handleAddressChange(setter: (v: string) => void, field: SuggField) {
+    return (e: React.ChangeEvent<HTMLInputElement>) => {
+      setter(e.target.value);
+      saveDraft();
+      openSuggestions(e.target.value, field);
+    };
+  }
+
+  function handleAddressKeyDown(
+    e: React.KeyboardEvent<HTMLInputElement>,
+    value: string,
+    setter: (v: string) => void,
+  ) {
+    if (!suggestions.length) return;
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setSuggIndex((i) => Math.min(i + 1, suggestions.length - 1));
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setSuggIndex((i) => Math.max(i - 1, -1));
+    } else if ((e.key === "Enter" || e.key === "Tab") && suggIndex >= 0) {
+      e.preventDefault();
+      commitSuggestion(value, setter, suggestions[suggIndex]);
+    } else if (e.key === "Escape") {
+      setSuggestions([]);
+      setSuggField(null);
+    }
+  }
+
+  function closeSuggestions() {
+    // Small delay so mouseDown on a suggestion fires before blur closes the list
+    setTimeout(() => { setSuggestions([]); setSuggField(null); }, 120);
+  }
+  // ─────────────────────────────────────────────────────────────────────────
+
   const title = initialTo
     ? `Re: ${initialSubject || "message"}`
     : initialSubject
@@ -327,9 +406,6 @@ export function ComposeModal({
 
   return (
     <div className="mf-compose-overlay" onClick={(e) => e.target === e.currentTarget && onClose()}>
-      <datalist id="mf-compose-contacts">
-        {contacts.map((c) => <option key={c} value={c} />)}
-      </datalist>
 
       <div
         className={`mf-compose-modal${isDragOver ? " mf-compose-drag-over" : ""}`}
@@ -356,15 +432,32 @@ export function ComposeModal({
         <div className="mf-compose-fields">
           <div className="mf-compose-field">
             <label htmlFor="mf-compose-to">To</label>
-            <input
-              id="mf-compose-to"
-              type="text"
-              value={to}
-              onChange={handleFieldChange(setTo)}
-              placeholder="recipient@example.com"
-              list="mf-compose-contacts"
-              autoFocus
-            />
+            <div className="mf-address-wrap">
+              <input
+                id="mf-compose-to"
+                type="text"
+                value={to}
+                onChange={handleAddressChange(setTo, "to")}
+                onKeyDown={(e) => handleAddressKeyDown(e, to, setTo)}
+                onBlur={closeSuggestions}
+                placeholder="recipient@example.com"
+                autoFocus
+                autoComplete="off"
+              />
+              {suggField === "to" && suggestions.length > 0 && (
+                <ul className="mf-suggestions" role="listbox" aria-label="Contacts">
+                  {suggestions.map((s, i) => (
+                    <li
+                      key={s}
+                      role="option"
+                      aria-selected={i === suggIndex}
+                      className={`mf-suggestion-item${i === suggIndex ? " active" : ""}`}
+                      onMouseDown={(e) => { e.preventDefault(); commitSuggestion(to, setTo, s); }}
+                    >{s}</li>
+                  ))}
+                </ul>
+              )}
+            </div>
             <button
               className="mf-compose-ccbcc-toggle"
               type="button"
@@ -380,25 +473,59 @@ export function ComposeModal({
             <>
               <div className="mf-compose-field">
                 <label htmlFor="mf-compose-cc">CC</label>
-                <input
-                  id="mf-compose-cc"
-                  type="text"
-                  value={cc}
-                  onChange={handleFieldChange(setCc)}
-                  placeholder="cc@example.com"
-                  list="mf-compose-contacts"
-                />
+                <div className="mf-address-wrap">
+                  <input
+                    id="mf-compose-cc"
+                    type="text"
+                    value={cc}
+                    onChange={handleAddressChange(setCc, "cc")}
+                    onKeyDown={(e) => handleAddressKeyDown(e, cc, setCc)}
+                    onBlur={closeSuggestions}
+                    placeholder="cc@example.com"
+                    autoComplete="off"
+                  />
+                  {suggField === "cc" && suggestions.length > 0 && (
+                    <ul className="mf-suggestions" role="listbox" aria-label="Contacts">
+                      {suggestions.map((s, i) => (
+                        <li
+                          key={s}
+                          role="option"
+                          aria-selected={i === suggIndex}
+                          className={`mf-suggestion-item${i === suggIndex ? " active" : ""}`}
+                          onMouseDown={(e) => { e.preventDefault(); commitSuggestion(cc, setCc, s); }}
+                        >{s}</li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
               </div>
               <div className="mf-compose-field">
                 <label htmlFor="mf-compose-bcc">BCC</label>
-                <input
-                  id="mf-compose-bcc"
-                  type="text"
-                  value={bcc}
-                  onChange={handleFieldChange(setBcc)}
-                  placeholder="bcc@example.com"
-                  list="mf-compose-contacts"
-                />
+                <div className="mf-address-wrap">
+                  <input
+                    id="mf-compose-bcc"
+                    type="text"
+                    value={bcc}
+                    onChange={handleAddressChange(setBcc, "bcc")}
+                    onKeyDown={(e) => handleAddressKeyDown(e, bcc, setBcc)}
+                    onBlur={closeSuggestions}
+                    placeholder="bcc@example.com"
+                    autoComplete="off"
+                  />
+                  {suggField === "bcc" && suggestions.length > 0 && (
+                    <ul className="mf-suggestions" role="listbox" aria-label="Contacts">
+                      {suggestions.map((s, i) => (
+                        <li
+                          key={s}
+                          role="option"
+                          aria-selected={i === suggIndex}
+                          className={`mf-suggestion-item${i === suggIndex ? " active" : ""}`}
+                          onMouseDown={(e) => { e.preventDefault(); commitSuggestion(bcc, setBcc, s); }}
+                        >{s}</li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
               </div>
             </>
           )}

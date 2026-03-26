@@ -714,6 +714,57 @@ input {
   background: transparent;
 }
 
+/* Address field autocomplete wrapper */
+.mf-address-wrap {
+  flex: 1;
+  position: relative;
+}
+
+.mf-address-wrap input {
+  width: 100%;
+  padding: 10px 0;
+  border: none;
+  outline: none;
+  font-size: var(--mf-font-size-base, 14px);
+  color: var(--mf-color-text, #202124);
+  background: transparent;
+}
+
+/* Suggestion dropdown */
+.mf-suggestions {
+  position: absolute;
+  top: 100%;
+  left: -60px; /* align to left edge of compose field incl. label */
+  right: 0;
+  background: var(--mf-color-surface, #fff);
+  border: 1px solid var(--mf-color-border, #e0e0e0);
+  border-radius: var(--mf-radius-md, 8px);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+  list-style: none;
+  margin: 2px 0 0;
+  padding: 4px 0;
+  z-index: 600;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.mf-suggestion-item {
+  padding: 8px 16px;
+  font-size: var(--mf-font-size-sm, 13px);
+  color: var(--mf-color-text, #202124);
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: background 0.1s;
+}
+
+.mf-suggestion-item:hover,
+.mf-suggestion-item.active {
+  background: var(--mf-color-selected, #e8f0fe);
+  color: var(--mf-color-accent, #1a73e8);
+}
+
 .mf-compose-body {
   flex: 1;
   min-height: 200px;
