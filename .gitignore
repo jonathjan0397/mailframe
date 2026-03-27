@@ -7,3 +7,5 @@ dist/
 .DS_Store
 node_modules/
 dist/
+server/.secret
+server/linked-accounts.json

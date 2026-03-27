@@ -3,6 +3,7 @@ import { randomUUID } from "crypto";
 export type AccountEntry = { email: string; imapPass: string };
 
 export type SessionData = {
+  primary: string;          // first account logged in; never changes; used as persistence key
   active: string;
   accounts: Map<string, AccountEntry>;
   expires: number;
@@ -15,6 +16,7 @@ export function createSession(email: string, imapPass: string, ttlHours: number)
   const accounts = new Map<string, AccountEntry>();
   accounts.set(email, { email, imapPass });
   sessions.set(token, {
+    primary: email,
     active: email,
     accounts,
     expires: Date.now() + ttlHours * 3_600_000,

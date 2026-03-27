@@ -14,6 +14,7 @@ import {
   type ImapCredentials,
 } from "./imap.js";
 import { watchAccount } from "./imap-notify.js";
+import { getLinkedAccounts, saveLinkedAccount, removeLinkedAccount } from "./linked-accounts.js";
 import { sendMail } from "./smtp.js";
 import type { SmtpCredentials } from "./smtp.js";
 
@@ -100,14 +101,20 @@ app.post("/auth/login", async (req, res) => {
     const existingToken = getCookieToken(req);
     const existingSession = existingToken ? getSession(existingToken) : null;
     if (existingSession && existingToken) {
-      // Add to existing session (multi-account)
+      // Adding a second account to an existing session — persist the link
       addAccountToSession(existingToken, email.trim(), password);
+      saveLinkedAccount(existingSession.primary, email.trim(), password);
       const accounts = [...existingSession.accounts.keys()];
       res.json({ ok: true, email: existingSession.active, accounts, name: config.app.name });
     } else {
+      // Fresh login — create session then silently restore any previously linked accounts
       const token = createSession(email.trim(), password, config.app.sessionTtlHours);
+      const linked = getLinkedAccounts(email.trim());
+      for (const la of linked) addAccountToSession(token, la.email, la.pass);
+      const session = getSession(token)!;
+      const accounts = [...session.accounts.keys()];
       setSessionCookie(res, token);
-      res.json({ ok: true, email: email.trim(), accounts: [email.trim()], name: config.app.name });
+      res.json({ ok: true, email: email.trim(), accounts, name: config.app.name });
     }
   } catch (e) {
     err(res, 401, e instanceof Error ? e.message : "Authentication failed.");
@@ -321,11 +328,14 @@ app.post("/auth/switch", requireAuth, (req, res) => {
   res.json({ email, accounts: [...session.accounts.keys()] });
 });
 
-// POST /auth/logout-account — remove one account from session
+// POST /auth/logout-account — remove one account from session and persistent store
 app.post("/auth/logout-account", requireAuth, (req, res) => {
   const token = getCookieToken(req)!;
   const { email } = req.body as { email?: string };
   if (!email) { err(res, 400, "email required."); return; }
+  const session = getSession(token)!;
+  // Remove from persistent store (only linked accounts, not the primary itself)
+  if (email !== session.primary) removeLinkedAccount(session.primary, email);
   const result = removeAccountFromSession(token, email);
   if (!result) { err(res, 500, "Session error."); return; }
   if (result.accounts.length === 0) {
