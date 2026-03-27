@@ -708,6 +708,17 @@ input {
   opacity: 0.85;
   margin-bottom: 2px;
 }
+.mf-notif-account {
+  font-size: 10px;
+  color: var(--mf-color-text-secondary, #5f6368);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-bottom: 1px;
+}
+.mf-notif-card--reminder .mf-notif-label {
+  color: var(--mf-color-warning, #f29900);
+}
 .mf-notif-sender {
   font-weight: 700;
   font-size: 14px;

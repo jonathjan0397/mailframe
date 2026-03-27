@@ -95,7 +95,7 @@ const SCHEDULED_KEY = "mailframe-scheduled";
 
 type SnoozedEntry = { id: string; wakeAt: number };
 
-type MailNotif = { id: string; sender: string; subject: string; msgId: string };
+type MailNotif = { id: string; sender: string; subject: string; msgId: string; type?: "new-mail" | "unread-reminder"; account?: string };
 
 function playNotifSound(sound: NotifSound) {
   if (sound === "none") return;
@@ -312,6 +312,8 @@ export function App() {
   const newFolderInputRef = useRef<HTMLInputElement>(null);
   const listWidthRef = useRef(listWidth);
   listWidthRef.current = listWidth;
+  const backAccountMsgIdsRef = useRef<Map<string, Set<string>>>(new Map());
+  const totalUnreadRef = useRef(0);
 
   const provider = useMemo(
     () => (providerId === "demo" ? demoProvider : apiProvider),
@@ -323,6 +325,7 @@ export function App() {
     () => folders.reduce((sum, f) => sum + (f.unreadCount ?? 0), 0),
     [folders],
   );
+  totalUnreadRef.current = totalUnread;
 
   const visibleMessages = useMemo(
     () =>
@@ -619,6 +622,119 @@ export function App() {
     }, 60_000);
     return () => clearInterval(timer);
   }, [activeFolderId, search, provider, providerId]);
+
+  // Poll all connected accounts for new INBOX messages every 60s
+  useEffect(() => {
+    if (providerId !== "api") return;
+    const apiBase = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? "http://localhost:4010";
+    const authStateRef_local = authState; // captured for this effect lifetime
+
+    const timer = setInterval(async () => {
+      try {
+        const res = await fetch(`${apiBase}/mailbox/poll-all`, { credentials: "include" });
+        if (!res.ok) return;
+        const data = await res.json() as {
+          results: Array<{ account: string; messages: Array<{ id: string; sender: string; subject: string }> }>;
+        };
+        for (const { account, messages } of data.results) {
+          const knownIds = backAccountMsgIdsRef.current.get(account);
+          const currentIds = new Set(messages.map((m) => m.id));
+
+          if (!knownIds) {
+            // First poll for this account — initialize, don't notify
+            backAccountMsgIdsRef.current.set(account, currentIds);
+            continue;
+          }
+
+          // Active account's active folder is already handled by the existing poller
+          if (account === authStateRef_local) {
+            backAccountMsgIdsRef.current.set(account, currentIds);
+            continue;
+          }
+
+          const incoming = messages.filter((m) => !knownIds.has(m.id));
+          if (incoming.length === 0) continue;
+
+          backAccountMsgIdsRef.current.set(account, currentIds);
+          playNotifSound(notifSoundRef.current);
+
+          if (inAppNotifsRef.current) {
+            const notifs: MailNotif[] = incoming.slice(0, 5).map((m) => ({
+              id: `${m.id}-${Date.now()}`,
+              sender: m.sender,
+              subject: m.subject,
+              msgId: m.id,
+              account,
+            }));
+            setMailNotifs((prev) => [...prev, ...notifs]);
+            notifs.forEach((n) => {
+              setTimeout(() => setMailNotifs((prev) => prev.filter((x) => x.id !== n.id)), 10000);
+            });
+          }
+
+          if ("Notification" in window && Notification.permission === "granted") {
+            const title = incoming.length === 1
+              ? `${account}: ${incoming[0].sender}`
+              : `${incoming.length} new messages in ${account}`;
+            const body = incoming.length === 1
+              ? incoming[0].subject
+              : incoming.slice(0, 3).map((m) => `${m.sender}: ${m.subject}`).join("\n");
+            const icon = `${import.meta.env.BASE_URL}favicon.ico`;
+            const tag = `mailframe-new-mail-${account}`;
+            const data2 = { url: window.location.href };
+            if ("serviceWorker" in navigator) {
+              navigator.serviceWorker.ready
+                .then((reg) => reg.showNotification(title, { body, icon, tag, data: data2 }))
+                .catch(() => {
+                  const n = new Notification(title, { body, icon, tag });
+                  n.onclick = () => { window.focus(); n.close(); };
+                  setTimeout(() => n.close(), 8000);
+                });
+            } else {
+              const n = new Notification(title, { body, icon, tag });
+              n.onclick = () => { window.focus(); n.close(); };
+              setTimeout(() => n.close(), 8000);
+            }
+          }
+        }
+      } catch { /* ignore */ }
+    }, 60_000);
+
+    return () => clearInterval(timer);
+  }, [providerId, authState]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Remind user every 10 minutes if there are unread messages
+  useEffect(() => {
+    if (providerId === "demo") return;
+    const timer = setInterval(() => {
+      const unread = totalUnreadRef.current;
+      if (unread === 0) return;
+
+      if (inAppNotifsRef.current) {
+        const notif: MailNotif = {
+          id: `unread-reminder-${Date.now()}`,
+          sender: "MailFrame",
+          subject: `You have ${unread} unread message${unread > 1 ? "s" : ""}`,
+          msgId: "",
+          type: "unread-reminder",
+        };
+        setMailNotifs((prev) => [...prev, notif]);
+        setTimeout(() => setMailNotifs((prev) => prev.filter((x) => x.id !== notif.id)), 10000);
+      }
+
+      if ("Notification" in window && Notification.permission === "granted") {
+        const n = new Notification("Unread Messages", {
+          body: `You have ${unread} unread message${unread > 1 ? "s" : ""}.`,
+          icon: `${import.meta.env.BASE_URL}favicon.ico`,
+          tag: "mailframe-unread-reminder",
+        });
+        n.onclick = () => { window.focus(); n.close(); };
+        setTimeout(() => n.close(), 8000);
+      }
+    }, 600_000); // 10 minutes
+
+    return () => clearInterval(timer);
+  }, [providerId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Fire scheduled sends
   useEffect(() => {
@@ -1356,29 +1472,36 @@ export function App() {
           {mailNotifs.map((n) => (
             <div
               key={n.id}
-              className="mf-notif-card"
+              className={`mf-notif-card${n.type === "unread-reminder" ? " mf-notif-card--reminder" : ""}`}
               role="button"
               tabIndex={0}
               onClick={() => {
-                setSelectedId(n.msgId);
+                if (n.msgId) setSelectedId(n.msgId);
                 setMailNotifs((prev) => prev.filter((x) => x.id !== n.id));
               }}
               onKeyDown={(e) => {
                 if (e.key === "Enter" || e.key === " ") {
                   e.preventDefault();
-                  setSelectedId(n.msgId);
+                  if (n.msgId) setSelectedId(n.msgId);
                   setMailNotifs((prev) => prev.filter((x) => x.id !== n.id));
                 }
               }}
             >
               <div className="mf-notif-icon" aria-hidden="true">
-                <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" width="32" height="32">
-                  <rect x="2" y="4" width="20" height="16" rx="2" stroke="currentColor" strokeWidth="1.6" fill="none"/>
-                  <path d="M2 7l10 7 10-7" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/>
-                </svg>
+                {n.type === "unread-reminder" ? (
+                  <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" width="32" height="32">
+                    <path d="M12 22c1.1 0 2-.9 2-2h-4a2 2 0 002 2zm6-6V11c0-3.07-1.64-5.64-4.5-6.32V4a1.5 1.5 0 00-3 0v.68C7.63 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z" fill="currentColor"/>
+                  </svg>
+                ) : (
+                  <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" width="32" height="32">
+                    <rect x="2" y="4" width="20" height="16" rx="2" stroke="currentColor" strokeWidth="1.6" fill="none"/>
+                    <path d="M2 7l10 7 10-7" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/>
+                  </svg>
+                )}
               </div>
               <div className="mf-notif-body">
-                <div className="mf-notif-label">New Message</div>
+                <div className="mf-notif-label">{n.type === "unread-reminder" ? "Unread Reminder" : "New Message"}</div>
+                {n.account && <div className="mf-notif-account">{n.account}</div>}
                 <div className="mf-notif-sender">{n.sender}</div>
                 <div className="mf-notif-subject">{n.subject}</div>
               </div>
