@@ -7,6 +7,7 @@ import { lumenTheme } from "./lumen";
 import { eclipseTheme } from "./eclipse";
 import { auroraTheme } from "./aurora";
 import { midnightTheme } from "./midnight";
+import { cardinalTheme } from "./cardinal";
 import type { ThemeTokens } from "./tokens";
 
 export const themeRegistry: ThemeTokens[] = [
@@ -14,4 +15,5 @@ export const themeRegistry: ThemeTokens[] = [
   eclipseTheme,
   auroraTheme,
   midnightTheme,
+  cardinalTheme,
 ];
