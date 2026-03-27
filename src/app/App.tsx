@@ -245,7 +245,9 @@ export function App() {
   const [apiOnline, setApiOnline] = useState(true);
   const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   type SortBy = "date-desc" | "date-asc" | "unread" | "starred" | "sender" | "subject";
-  const [sortBy, setSortBy] = useState<SortBy>("date-desc");
+  const [sortBy, setSortBy] = useState<SortBy>(
+    () => (localStorage.getItem("mailframe-sort") as SortBy | null) ?? "date-desc",
+  );
   const [sourceOpen, setSourceOpen] = useState(false);
   const [sourceContent, setSourceContent] = useState<string | null>(null);
   const [sourceLoading, setSourceLoading] = useState(false);
@@ -365,6 +367,9 @@ export function App() {
     const theme = themeRegistry.find((t) => t.id === activeThemeId) ?? themeRegistry[0];
     applyTheme(theme);
   }, [activeThemeId]);
+
+  // Persist sort preference
+  useEffect(() => { localStorage.setItem("mailframe-sort", sortBy); }, [sortBy]);
 
   // Check auth when switching to bridge provider
   useEffect(() => {
@@ -775,14 +780,25 @@ export function App() {
       .catch(() => showToast("Failed to delete folder"));
   }
 
-  function removeMessages(ids: string[]) {
+  function removeMessages(ids: string[], autoAdvance = false) {
     setMessages((prev) => prev.filter((m) => !ids.includes(m.id)));
     setSelectedIds((prev) => {
       const next = new Set(prev);
       ids.forEach((id) => next.delete(id));
       return next;
     });
-    if (selectedId && ids.includes(selectedId)) { setSelectedId(null); setDetail(null); }
+    if (selectedId && ids.includes(selectedId)) {
+      if (autoAdvance) {
+        const currentIdx = sortedMessages.findIndex((m) => m.id === selectedId);
+        const remaining = sortedMessages.filter((m) => !ids.includes(m.id));
+        const nextMsg = remaining[currentIdx] ?? remaining[currentIdx - 1] ?? null;
+        setSelectedId(nextMsg ? nextMsg.id : null);
+        if (!nextMsg) setDetail(null);
+      } else {
+        setSelectedId(null);
+        setDetail(null);
+      }
+    }
   }
 
   function handleDelete(
@@ -790,7 +806,7 @@ export function App() {
   ) {
     if (!ids.length) return;
     provider.deleteMessages?.(ids);
-    removeMessages(ids);
+    removeMessages(ids, ids.length === 1);
     showToast(`${ids.length === 1 ? "Message" : `${ids.length} messages`} deleted`);
   }
 
@@ -799,7 +815,7 @@ export function App() {
   ) {
     if (!ids.length) return;
     provider.moveMessages?.(ids, "Archive");
-    removeMessages(ids);
+    removeMessages(ids, ids.length === 1);
     showToast(`${ids.length === 1 ? "Message" : `${ids.length} messages`} archived`);
   }
 
@@ -1190,6 +1206,7 @@ export function App() {
           onSignatureChange={handleSignatureChange}
           notifSound={notifSound}
           onNotifSoundChange={(s) => { localStorage.setItem("mailframe-notif-sound", s); setNotifSound(s); }}
+          onPreviewSound={() => playNotifSound(notifSoundRef.current)}
           inAppNotifsEnabled={inAppNotifsEnabled}
           onInAppNotifsChange={(v) => { localStorage.setItem("mailframe-notif-inapp", String(v)); setInAppNotifsEnabled(v); }}
           onClose={() => setSettingsOpen(false)}

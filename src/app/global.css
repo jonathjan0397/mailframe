@@ -1331,6 +1331,27 @@ input {
   cursor: pointer;
 }
 
+.mf-settings-preview-btn {
+  flex-shrink: 0;
+  width: 34px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--mf-color-border, #e0e0e0);
+  border-radius: var(--mf-radius-sm, 6px);
+  background: var(--mf-color-surface-alt, #f5f5f5);
+  color: var(--mf-color-text, #333);
+  cursor: pointer;
+  font-size: 11px;
+  transition: background 0.15s, border-color 0.15s;
+}
+.mf-settings-preview-btn:hover {
+  background: var(--mf-color-accent, #1a73e8);
+  border-color: var(--mf-color-accent, #1a73e8);
+  color: var(--mf-color-accent-text, #fff);
+}
+
 .mf-settings-toggle-row {
   display: flex;
   align-items: center;

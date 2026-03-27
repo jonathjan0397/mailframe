@@ -13,6 +13,7 @@ type Props = {
   onSignatureChange: (val: string) => void;
   notifSound: NotifSound;
   onNotifSoundChange: (sound: NotifSound) => void;
+  onPreviewSound: () => void;
   inAppNotifsEnabled: boolean;
   onInAppNotifsChange: (enabled: boolean) => void;
   onClose: () => void;
@@ -28,6 +29,7 @@ export function SettingsPanel({
   onSignatureChange,
   notifSound,
   onNotifSoundChange,
+  onPreviewSound,
   inAppNotifsEnabled,
   onInAppNotifsChange,
   onClose,
@@ -140,17 +142,31 @@ export function SettingsPanel({
                 <label className="mf-settings-label" htmlFor="mf-notif-sound">
                   Notification sound
                 </label>
-                <select
-                  id="mf-notif-sound"
-                  className="mf-settings-select"
-                  value={notifSound}
-                  onChange={(e) => onNotifSoundChange(e.target.value as NotifSound)}
-                >
-                  <option value="chime">Chime (two-tone)</option>
-                  <option value="bell">Bell (single tone)</option>
-                  <option value="pop">Pop (short)</option>
-                  <option value="none">Silent</option>
-                </select>
+                <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                  <select
+                    id="mf-notif-sound"
+                    className="mf-settings-select"
+                    style={{ flex: 1 }}
+                    value={notifSound}
+                    onChange={(e) => onNotifSoundChange(e.target.value as NotifSound)}
+                  >
+                    <option value="chime">Chime (two-tone)</option>
+                    <option value="bell">Bell (single tone)</option>
+                    <option value="pop">Pop (short)</option>
+                    <option value="none">Silent</option>
+                  </select>
+                  {notifSound !== "none" && (
+                    <button
+                      type="button"
+                      className="mf-settings-preview-btn"
+                      onClick={onPreviewSound}
+                      aria-label="Preview notification sound"
+                      title="Preview sound"
+                    >
+                      ▶
+                    </button>
+                  )}
+                </div>
               </div>
             )}
           </section>
