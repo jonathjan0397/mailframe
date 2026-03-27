@@ -1,6 +1,7 @@
 import type { ThemeTokens } from "../themes/tokens";
 
 export type ProviderId = "demo" | "api";
+export type NotifSound = "chime" | "bell" | "pop" | "none";
 
 type Props = {
   themes: ThemeTokens[];
@@ -10,6 +11,10 @@ type Props = {
   onProviderChange: (id: ProviderId) => void;
   signature: string;
   onSignatureChange: (val: string) => void;
+  notifSound: NotifSound;
+  onNotifSoundChange: (sound: NotifSound) => void;
+  inAppNotifsEnabled: boolean;
+  onInAppNotifsChange: (enabled: boolean) => void;
   onClose: () => void;
 };
 
@@ -21,6 +26,10 @@ export function SettingsPanel({
   onProviderChange,
   signature,
   onSignatureChange,
+  notifSound,
+  onNotifSoundChange,
+  inAppNotifsEnabled,
+  onInAppNotifsChange,
   onClose,
 }: Props) {
 
@@ -110,6 +119,40 @@ export function SettingsPanel({
               />
               <p className="mf-settings-hint">Appended to new compositions automatically.</p>
             </div>
+          </section>
+
+          <section className="mf-settings-section">
+            <h2 className="mf-settings-section-title">Notifications</h2>
+            <div className="mf-settings-field">
+              <label className="mf-settings-toggle-row">
+                <span className="mf-settings-label">In-app new mail popups</span>
+                <input
+                  type="checkbox"
+                  className="mf-settings-toggle"
+                  checked={inAppNotifsEnabled}
+                  onChange={(e) => onInAppNotifsChange(e.target.checked)}
+                  aria-label="Enable in-app notification popups"
+                />
+              </label>
+            </div>
+            {inAppNotifsEnabled && (
+              <div className="mf-settings-field">
+                <label className="mf-settings-label" htmlFor="mf-notif-sound">
+                  Notification sound
+                </label>
+                <select
+                  id="mf-notif-sound"
+                  className="mf-settings-select"
+                  value={notifSound}
+                  onChange={(e) => onNotifSoundChange(e.target.value as NotifSound)}
+                >
+                  <option value="chime">Chime (two-tone)</option>
+                  <option value="bell">Bell (single tone)</option>
+                  <option value="pop">Pop (short)</option>
+                  <option value="none">Silent</option>
+                </select>
+              </div>
+            )}
           </section>
 
           <section className="mf-settings-section">

@@ -8,7 +8,7 @@ import { apiProvider } from "../features/mail/providers/api-provider";
 import { ComposeModal } from "./ComposeModal";
 import { LoginPage } from "./LoginPage";
 import { SettingsPanel } from "./SettingsPanel";
-import type { ProviderId } from "./SettingsPanel";
+import type { ProviderId, NotifSound } from "./SettingsPanel";
 import type { MailItem, MailMessageDetail, MailFolder } from "../lib/mail-types";
 import type { SendPayload } from "../features/mail/provider";
 
@@ -97,21 +97,36 @@ type SnoozedEntry = { id: string; wakeAt: number };
 
 type MailNotif = { id: string; sender: string; subject: string; msgId: string };
 
-function playNotifSound() {
+function playNotifSound(sound: NotifSound) {
+  if (sound === "none") return;
   try {
     const ctx = new AudioContext();
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
     osc.connect(gain);
     gain.connect(ctx.destination);
-    // Two-tone chime: high note then lower note
     osc.type = "sine";
-    osc.frequency.setValueAtTime(1046, ctx.currentTime);        // C6
-    osc.frequency.setValueAtTime(784, ctx.currentTime + 0.12);  // G5
-    gain.gain.setValueAtTime(0.25, ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.55);
-    osc.start(ctx.currentTime);
-    osc.stop(ctx.currentTime + 0.55);
+    if (sound === "chime") {
+      osc.frequency.setValueAtTime(1046, ctx.currentTime);       // C6
+      osc.frequency.setValueAtTime(784,  ctx.currentTime + 0.12); // G5
+      gain.gain.setValueAtTime(0.25, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.55);
+      osc.start(ctx.currentTime);
+      osc.stop(ctx.currentTime + 0.55);
+    } else if (sound === "bell") {
+      osc.frequency.setValueAtTime(880, ctx.currentTime);         // A5
+      gain.gain.setValueAtTime(0.22, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.9);
+      osc.start(ctx.currentTime);
+      osc.stop(ctx.currentTime + 0.9);
+    } else if (sound === "pop") {
+      osc.frequency.setValueAtTime(1200, ctx.currentTime);
+      osc.frequency.linearRampToValueAtTime(800, ctx.currentTime + 0.08);
+      gain.gain.setValueAtTime(0.2, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.12);
+      osc.start(ctx.currentTime);
+      osc.stop(ctx.currentTime + 0.12);
+    }
     osc.onended = () => ctx.close();
   } catch { /* AudioContext not available */ }
 }
@@ -221,6 +236,12 @@ export function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [newMessageCount, setNewMessageCount] = useState(0);
   const [mailNotifs, setMailNotifs] = useState<MailNotif[]>([]);
+  const [notifSound, setNotifSound] = useState<NotifSound>(
+    () => (localStorage.getItem("mailframe-notif-sound") as NotifSound | null) ?? "chime",
+  );
+  const [inAppNotifsEnabled, setInAppNotifsEnabled] = useState(
+    () => localStorage.getItem("mailframe-notif-inapp") !== "false",
+  );
   const [apiOnline, setApiOnline] = useState(true);
   const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   type SortBy = "date-desc" | "date-asc" | "unread" | "starred" | "sender" | "subject";
@@ -282,6 +303,10 @@ export function App() {
   const messagesListRef = useRef<HTMLUListElement>(null);
   const messageIdsRef = useRef<Set<string>>(new Set());
   const keyHandlerRef = useRef<(e: KeyboardEvent) => void>(() => {});
+  const notifSoundRef = useRef(notifSound);
+  notifSoundRef.current = notifSound;
+  const inAppNotifsRef = useRef(inAppNotifsEnabled);
+  inAppNotifsRef.current = inAppNotifsEnabled;
   const newFolderInputRef = useRef<HTMLInputElement>(null);
   const listWidthRef = useRef(listWidth);
   listWidthRef.current = listWidth;
@@ -540,21 +565,23 @@ export function App() {
           if (incoming.length > 0) {
             setMessages((prev) => [...incoming, ...prev]);
             setNewMessageCount((n) => n + incoming.length);
-            playNotifSound();
-            // In-app popup cards (bottom-right)
-            const notifs: MailNotif[] = incoming.slice(0, 5).map((m) => ({
-              id: `${m.id}-${Date.now()}`,
-              sender: m.sender,
-              subject: m.subject,
-              msgId: m.id,
-            }));
-            setMailNotifs((prev) => [...prev, ...notifs]);
-            // Auto-dismiss each after 6s
-            notifs.forEach((n) => {
-              setTimeout(() => {
-                setMailNotifs((prev) => prev.filter((x) => x.id !== n.id));
-              }, 6000);
-            });
+            playNotifSound(notifSoundRef.current);
+            if (inAppNotifsRef.current) {
+              // In-app popup cards (bottom-right)
+              const notifs: MailNotif[] = incoming.slice(0, 5).map((m) => ({
+                id: `${m.id}-${Date.now()}`,
+                sender: m.sender,
+                subject: m.subject,
+                msgId: m.id,
+              }));
+              setMailNotifs((prev) => [...prev, ...notifs]);
+              // Auto-dismiss each after 10s
+              notifs.forEach((n) => {
+                setTimeout(() => {
+                  setMailNotifs((prev) => prev.filter((x) => x.id !== n.id));
+                }, 10000);
+              });
+            }
             // Browser desktop notification (background)
             if ("Notification" in window && Notification.permission === "granted") {
               const title = incoming.length === 1
@@ -1161,6 +1188,10 @@ export function App() {
           onProviderChange={(id) => { localStorage.setItem("mailframe-provider", id); setProviderId(id); }}
           signature={signature}
           onSignatureChange={handleSignatureChange}
+          notifSound={notifSound}
+          onNotifSoundChange={(s) => { localStorage.setItem("mailframe-notif-sound", s); setNotifSound(s); }}
+          inAppNotifsEnabled={inAppNotifsEnabled}
+          onInAppNotifsChange={(v) => { localStorage.setItem("mailframe-notif-inapp", String(v)); setInAppNotifsEnabled(v); }}
           onClose={() => setSettingsOpen(false)}
         />
       )}
@@ -1323,8 +1354,14 @@ export function App() {
                 }
               }}
             >
-              <div className="mf-notif-icon">✉</div>
+              <div className="mf-notif-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" width="32" height="32">
+                  <rect x="2" y="4" width="20" height="16" rx="2" stroke="currentColor" strokeWidth="1.6" fill="none"/>
+                  <path d="M2 7l10 7 10-7" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/>
+                </svg>
+              </div>
               <div className="mf-notif-body">
+                <div className="mf-notif-label">New Message</div>
                 <div className="mf-notif-sender">{n.sender}</div>
                 <div className="mf-notif-subject">{n.subject}</div>
               </div>
@@ -1336,6 +1373,7 @@ export function App() {
                   setMailNotifs((prev) => prev.filter((x) => x.id !== n.id));
                 }}
               >×</button>
+              <div className="mf-notif-progress" aria-hidden="true" />
             </div>
           ))}
         </div>
