@@ -236,6 +236,7 @@ export function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [newMessageCount, setNewMessageCount] = useState(0);
   const [mailNotifs, setMailNotifs] = useState<MailNotif[]>([]);
+  const [accountUnread, setAccountUnread] = useState<Map<string, number>>(new Map());
   const [notifSound, setNotifSound] = useState<NotifSound>(
     () => (localStorage.getItem("mailframe-notif-sound") as NotifSound | null) ?? "chime",
   );
@@ -326,6 +327,15 @@ export function App() {
     [folders],
   );
   totalUnreadRef.current = totalUnread;
+  // Keep active account's unread dot in sync with folder data
+  useEffect(() => {
+    if (typeof authState !== "string") return;
+    setAccountUnread((prev) => {
+      const next = new Map(prev);
+      next.set(authState, totalUnread);
+      return next;
+    });
+  }, [totalUnread, authState]);
 
   const visibleMessages = useMemo(
     () =>
@@ -634,7 +644,7 @@ export function App() {
         const res = await fetch(`${apiBase}/mailbox/poll-all`, { credentials: "include" });
         if (!res.ok) return;
         const data = await res.json() as {
-          results: Array<{ account: string; messages: Array<{ id: string; sender: string; subject: string }> }>;
+          results: Array<{ account: string; messages: Array<{ id: string; sender: string; subject: string; unread: boolean }> }>;
         };
         for (const { account, messages } of data.results) {
           const knownIds = backAccountMsgIdsRef.current.get(account);
@@ -643,6 +653,14 @@ export function App() {
           if (!knownIds) {
             // First poll for this account — initialize, don't notify
             backAccountMsgIdsRef.current.set(account, currentIds);
+            if (account !== authStateRef_local) {
+              const unreadCount = messages.filter((m) => m.unread).length;
+              setAccountUnread((prev) => {
+                const next = new Map(prev);
+                next.set(account, unreadCount);
+                return next;
+              });
+            }
             continue;
           }
 
@@ -651,6 +669,14 @@ export function App() {
             backAccountMsgIdsRef.current.set(account, currentIds);
             continue;
           }
+
+          // Update unread dot for background accounts
+          const unreadCount = messages.filter((m) => m.unread).length;
+          setAccountUnread((prev) => {
+            const next = new Map(prev);
+            next.set(account, unreadCount);
+            return next;
+          });
 
           const incoming = messages.filter((m) => !knownIds.has(m.id));
           if (incoming.length === 0) continue;
@@ -1557,7 +1583,12 @@ export function App() {
                   onClick={() => { if (acct !== authState) handleSwitchAccount(acct); }}
                   title={acct}
                 >
-                  <span className="mf-account-avatar">{acct[0].toUpperCase()}</span>
+                  <span className="mf-account-avatar">
+                    {acct[0].toUpperCase()}
+                    {(accountUnread.get(acct) ?? 0) > 0 && (
+                      <span className="mf-account-unread-dot" aria-label="Unread mail" />
+                    )}
+                  </span>
                   <span className="mf-account-email">{acct}</span>
                 </button>
                 <button

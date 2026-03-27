@@ -2655,6 +2655,22 @@ kbd {
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
+  position: relative;
+}
+.mf-account-unread-dot {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #ea4335;
+  border: 1.5px solid var(--mf-color-sidebar-bg, #fff);
+  animation: mf-dot-blink 1.4s ease-in-out infinite;
+}
+@keyframes mf-dot-blink {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.25; }
 }
 
 .mf-account-email {
