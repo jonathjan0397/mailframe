@@ -13,6 +13,7 @@ import {
   starMessage, createFolder, deleteFolder,
   type ImapCredentials,
 } from "./imap.js";
+import { watchAccount } from "./imap-notify.js";
 import { sendMail } from "./smtp.js";
 import type { SmtpCredentials } from "./smtp.js";
 
@@ -351,6 +352,46 @@ app.get("/mailbox/poll-all", requireAuth, async (req, res) => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     .map((r) => (r as any).value as { account: string; messages: unknown[] });
   res.json({ results });
+});
+
+// GET /events — Server-Sent Events stream; uses IMAP IDLE for real-time new-mail push
+app.get("/events", requireAuth, (req, res) => {
+  const token = getCookieToken(req)!;
+  const session = getSession(token)!;
+
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
+  res.setHeader("X-Accel-Buffering", "no"); // disable nginx buffering if present
+  res.flushHeaders();
+
+  // Initial comment keeps the connection alive and confirms it's open
+  res.write(": connected\n\n");
+
+  // Heartbeat comment every 25s prevents proxies/load-balancers from closing idle connections
+  const heartbeat = setInterval(() => {
+    if (!res.writableEnded) res.write(": heartbeat\n\n");
+  }, 25_000);
+
+  const ac = new AbortController();
+
+  // Start one IDLE watcher per account in this session
+  for (const account of session.accounts.values()) {
+    const creds: ImapCredentials = { user: account.email, pass: account.imapPass };
+    watchAccount(
+      creds,
+      (msgs) => {
+        if (res.writableEnded) return;
+        res.write(`event: new-mail\ndata: ${JSON.stringify({ account: account.email, messages: msgs })}\n\n`);
+      },
+      ac.signal,
+    ).catch(() => {});
+  }
+
+  req.on("close", () => {
+    clearInterval(heartbeat);
+    ac.abort();
+  });
 });
 
 // Health check (public)

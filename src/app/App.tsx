@@ -315,6 +315,7 @@ export function App() {
   listWidthRef.current = listWidth;
   const backAccountMsgIdsRef = useRef<Map<string, Set<string>>>(new Map());
   const totalUnreadRef = useRef(0);
+  const activeFolderIdRef = useRef("INBOX");
 
   const provider = useMemo(
     () => (providerId === "demo" ? demoProvider : apiProvider),
@@ -327,6 +328,7 @@ export function App() {
     [folders],
   );
   totalUnreadRef.current = totalUnread;
+  activeFolderIdRef.current = activeFolderId;
   // Keep active account's unread dot in sync with folder data
   useEffect(() => {
     if (typeof authState !== "string") return;
@@ -633,100 +635,115 @@ export function App() {
     return () => clearInterval(timer);
   }, [activeFolderId, search, provider, providerId]);
 
-  // Poll all connected accounts for new INBOX messages every 60s
+  // Poll all accounts every 60s — unread dot counts only (notifications handled by SSE/IDLE)
   useEffect(() => {
     if (providerId !== "api") return;
     const apiBase = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? "http://localhost:4010";
-    const authStateRef_local = authState; // captured for this effect lifetime
+    const authStateRef_local = authState;
 
     const timer = setInterval(async () => {
       try {
         const res = await fetch(`${apiBase}/mailbox/poll-all`, { credentials: "include" });
         if (!res.ok) return;
         const data = await res.json() as {
-          results: Array<{ account: string; messages: Array<{ id: string; sender: string; subject: string; unread: boolean }> }>;
+          results: Array<{ account: string; messages: Array<{ unread: boolean }> }>;
         };
         for (const { account, messages } of data.results) {
-          const knownIds = backAccountMsgIdsRef.current.get(account);
-          const currentIds = new Set(messages.map((m) => m.id));
-
-          if (!knownIds) {
-            // First poll for this account — initialize, don't notify
-            backAccountMsgIdsRef.current.set(account, currentIds);
-            if (account !== authStateRef_local) {
-              const unreadCount = messages.filter((m) => m.unread).length;
-              setAccountUnread((prev) => {
-                const next = new Map(prev);
-                next.set(account, unreadCount);
-                return next;
-              });
-            }
-            continue;
-          }
-
-          // Active account's active folder is already handled by the existing poller
-          if (account === authStateRef_local) {
-            backAccountMsgIdsRef.current.set(account, currentIds);
-            continue;
-          }
-
-          // Update unread dot for background accounts
+          if (account === authStateRef_local) continue; // active account uses folder data
           const unreadCount = messages.filter((m) => m.unread).length;
           setAccountUnread((prev) => {
             const next = new Map(prev);
             next.set(account, unreadCount);
             return next;
           });
-
-          const incoming = messages.filter((m) => !knownIds.has(m.id));
-          if (incoming.length === 0) continue;
-
-          backAccountMsgIdsRef.current.set(account, currentIds);
-          playNotifSound(notifSoundRef.current);
-
-          if (inAppNotifsRef.current) {
-            const notifs: MailNotif[] = incoming.slice(0, 5).map((m) => ({
-              id: `${m.id}-${Date.now()}`,
-              sender: m.sender,
-              subject: m.subject,
-              msgId: m.id,
-              account,
-            }));
-            setMailNotifs((prev) => [...prev, ...notifs]);
-            notifs.forEach((n) => {
-              setTimeout(() => setMailNotifs((prev) => prev.filter((x) => x.id !== n.id)), 10000);
-            });
-          }
-
-          if ("Notification" in window && Notification.permission === "granted") {
-            const title = incoming.length === 1
-              ? `${account}: ${incoming[0].sender}`
-              : `${incoming.length} new messages in ${account}`;
-            const body = incoming.length === 1
-              ? incoming[0].subject
-              : incoming.slice(0, 3).map((m) => `${m.sender}: ${m.subject}`).join("\n");
-            const icon = `${import.meta.env.BASE_URL}favicon.ico`;
-            const tag = `mailframe-new-mail-${account}`;
-            const data2 = { url: window.location.href };
-            if ("serviceWorker" in navigator) {
-              navigator.serviceWorker.ready
-                .then((reg) => reg.showNotification(title, { body, icon, tag, data: data2 }))
-                .catch(() => {
-                  const n = new Notification(title, { body, icon, tag });
-                  n.onclick = () => { window.focus(); n.close(); };
-                  setTimeout(() => n.close(), 8000);
-                });
-            } else {
-              const n = new Notification(title, { body, icon, tag });
-              n.onclick = () => { window.focus(); n.close(); };
-              setTimeout(() => n.close(), 8000);
-            }
-          }
         }
       } catch { /* ignore */ }
     }, 60_000);
 
     return () => clearInterval(timer);
+  }, [providerId, authState]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // SSE — real-time new-mail push via IMAP IDLE (replaces polling for notification latency)
+  useEffect(() => {
+    if (providerId !== "api" || typeof authState !== "string") return;
+    const apiBase = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? "http://localhost:4010";
+
+    const es = new EventSource(`${apiBase}/events`, { withCredentials: true });
+
+    es.addEventListener("new-mail", (e: MessageEvent) => {
+      type SsePayload = { account: string; messages: Array<{ id: string; sender: string; subject: string; unread: boolean }> };
+      let payload: SsePayload;
+      try { payload = JSON.parse(e.data as string) as SsePayload; }
+      catch { return; }
+
+      const { account, messages } = payload;
+      const isActiveAccount = account === authState;
+
+      // Deduplicate against already-known message IDs
+      const knownIds = isActiveAccount
+        ? messageIdsRef.current
+        : backAccountMsgIdsRef.current.get(account) ?? new Set<string>();
+
+      const incoming = messages.filter((m) => !knownIds.has(m.id));
+      if (incoming.length === 0) return;
+
+      // Update known IDs
+      if (isActiveAccount) {
+        incoming.forEach((m) => messageIdsRef.current.add(m.id));
+        // Inject into message list (INBOX only — active folder check)
+        if (activeFolderIdRef.current === "INBOX") {
+          setMessages((prev) => [...(incoming as unknown as typeof prev), ...prev]);
+          setNewMessageCount((n) => n + incoming.length);
+        }
+      } else {
+        const next = new Set(knownIds);
+        incoming.forEach((m) => next.add(m.id));
+        backAccountMsgIdsRef.current.set(account, next);
+        // Update unread dot
+        const unreadCount = messages.filter((m) => m.unread).length;
+        setAccountUnread((prev) => { const nm = new Map(prev); nm.set(account, unreadCount); return nm; });
+      }
+
+      playNotifSound(notifSoundRef.current);
+
+      // In-app notification cards
+      if (inAppNotifsRef.current) {
+        const notifs: MailNotif[] = incoming.slice(0, 5).map((m) => ({
+          id: `${m.id}-${Date.now()}`,
+          sender: m.sender,
+          subject: m.subject,
+          msgId: m.id,
+          account: isActiveAccount ? undefined : account,
+        }));
+        setMailNotifs((prev) => [...prev, ...notifs]);
+        notifs.forEach((n) => setTimeout(() => setMailNotifs((prev) => prev.filter((x) => x.id !== n.id)), 10000));
+      }
+
+      // Desktop notification
+      if ("Notification" in window && Notification.permission === "granted") {
+        const label = isActiveAccount ? "" : `${account}: `;
+        const title = incoming.length === 1
+          ? `${label}${incoming[0].sender}`
+          : `${incoming.length} new messages${isActiveAccount ? "" : ` in ${account}`}`;
+        const body = incoming.length === 1
+          ? incoming[0].subject
+          : incoming.slice(0, 3).map((m) => `${m.sender}: ${m.subject}`).join("\n");
+        const icon = `${import.meta.env.BASE_URL}favicon.ico`;
+        const tag = `mailframe-new-mail-${account}`;
+        const data = { url: window.location.href };
+        if ("serviceWorker" in navigator) {
+          navigator.serviceWorker.ready
+            .then((reg) => reg.showNotification(title, { body, icon, tag, data }))
+            .catch(() => { const n = new Notification(title, { body, icon, tag }); n.onclick = () => { window.focus(); n.close(); }; setTimeout(() => n.close(), 8000); });
+        } else {
+          const n = new Notification(title, { body, icon, tag });
+          n.onclick = () => { window.focus(); n.close(); };
+          setTimeout(() => n.close(), 8000);
+        }
+      }
+    });
+
+    return () => es.close();
   }, [providerId, authState]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Remind user every 10 minutes if there are unread messages
